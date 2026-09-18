@@ -1,0 +1,76 @@
+name: Build
+
+# Builds every platform on demand and on every push to main, so a broken build
+# is caught before a release depends on it. Releases are cut by release.yml.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  macos:
+    name: macOS (arm64 + x64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Both architectures build on one runner: only the bundled Electron
+      # differs, and electron-builder just repackages the one it downloads.
+      - run: npm run build
+      - run: npx electron-builder --mac --arm64 --x64 --publish never
+      - run: cp scripts/install-macos.sh release/
+      - name: Check the bundles are signed
+        # Unsigned, macOS calls the app "damaged" and offers no way past it.
+        run: |
+          for app in release/mac*/*.app; do
+            codesign --verify --deep --strict "$app"
+            echo "ok: $app"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/install-macos.sh
+
+  linux:
+    name: Linux (x86_64 + arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # One x86_64 runner produces both AppImages: mksquashfs and the block-map
+      # builder run as the host architecture and do not care what they wrap.
+      - run: npm run build
+      - run: npx electron-builder --linux --x64 --arm64 --publish never
+      - name: Check each AppImage carries the right payload
+        # An AppImage is [ELF runtime][squashfs]; the filesystem starts where
+        # the ELF ends, which is what the runtime reports as --appimage-offset.
+        # Reading it this way needs no binary of the target architecture.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq squashfs-tools binutils
+          for f in release/*.AppImage; do
+            eval "$(readelf -h "$f" | awk -F: '
+              /Start of section headers/ {gsub(/[^0-9]/,"",$2); print "SH="$2}
+              /Size of section headers/  {gsub(/[^0-9]/,"",$2); print "SS="$2}
+              /Number of section headers/{gsub(/[^0-9]/,"",$2); print "SN="$2}')"
+            rm -rf out-check
+            unsquashfs -o $((SH + SS * SN)) -d out-check -q "$f"
+            bin=$(ls out-check | grep -i claude | head -1)
+            echo "$(basename "$f"): runtime=$(file -b "$f" | cut -d, -f2) payload=$(file -b "out-check/$bin" | cut -d, -f2)"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: release/*.AppImage
