@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#282833"/>
+      <stop offset="1" stop-color="#0d0d11"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.07"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-120%" y="-120%" width="340%" height="340%">
+      <feGaussianBlur stdDeviation="16" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- squircle tile -->
+  <rect x="72" y="72" width="880" height="880" rx="212" fill="url(#tile)"/>
+  <rect x="72" y="72" width="880" height="880" rx="212" fill="url(#sheen)"/>
+  <rect x="76" y="76" width="872" height="872" rx="208"
+        fill="none" stroke="#c6c3cf" stroke-opacity="0.10" stroke-width="4"/>
+
+  <!-- three session rows: busy, waiting-on-you, idle -->
+  <g>
+    <rect x="212" y="266" width="600" height="132" rx="30" fill="#1b1b23" stroke="#3a3a48" stroke-width="5"/>
+    <circle cx="278" cy="332" r="27" fill="#c9a227"/>
+    <rect x="336" y="304" width="330" height="18" rx="9" fill="#c6c3cf" fill-opacity="0.5"/>
+    <rect x="336" y="342" width="196" height="15" rx="7.5" fill="#6b6878" fill-opacity="0.75"/>
+  </g>
+
+  <g>
+    <rect x="212" y="446" width="600" height="132" rx="30" fill="#23131a" stroke="#c04a52" stroke-opacity="0.95" stroke-width="6"/>
+    <circle cx="278" cy="512" r="27" fill="#a83f45" filter="url(#glow)"/>
+    <rect x="336" y="484" width="368" height="18" rx="9" fill="#c6c3cf" fill-opacity="0.62"/>
+    <rect x="336" y="522" width="238" height="15" rx="7.5" fill="#a83f45" fill-opacity="0.8"/>
+  </g>
+
+  <g>
+    <rect x="212" y="626" width="600" height="132" rx="30" fill="#1b1b23" stroke="#3a3a48" stroke-width="5"/>
+    <circle cx="278" cy="692" r="27" fill="#5f8a72"/>
+    <rect x="336" y="664" width="286" height="18" rx="9" fill="#c6c3cf" fill-opacity="0.5"/>
+    <rect x="336" y="702" width="160" height="15" rx="7.5" fill="#6b6878" fill-opacity="0.75"/>
+  </g>
+</svg>

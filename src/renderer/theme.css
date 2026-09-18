@@ -1,0 +1,96 @@
+@import 'tailwindcss';
+
+/*
+ * Morbid dark. Dark-only by design - there is no light palette and no toggle.
+ * A desaturated near-black ground with bone-coloured text, and accents that
+ * read as symptoms: sickly amber for work in progress, arterial red for
+ * anything that wants a human.
+ */
+@theme {
+  --color-void: #08080a;
+  --color-crypt: #101014;
+  --color-slab: #17171d;
+  --color-suture: #24242d;
+  --color-bone: #c6c3cf;
+  --color-ash: #6b6878;
+
+  --color-bile: #c9a227;
+  --color-artery: #a83f45;
+  --color-verdigris: #5f8a72;
+  --color-mortis: #4a4a56;
+  --color-clot: #8b2f3f;
+  --color-shroud: #3a3a44;
+  --color-bruise: #8257b0;
+  --color-ichor: #5b8fa8;   /* automated, machine-run - cold and clinical */
+
+  --font-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-void);
+  color: var(--color-bone);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, system-ui, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* The board is the only scroll container; the window itself never scrolls. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-suture);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-mortis);
+}
+
+/* Cards that need a human breathe, so they catch the eye in a full grid. */
+@keyframes board-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: board-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes board-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.breathe-dot {
+  animation: board-breathe 2.6s ease-in-out infinite;
+}
+
+/* The macOS traffic lights sit over the toolbar in a hiddenInset title bar. */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
