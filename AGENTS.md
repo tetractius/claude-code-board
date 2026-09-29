@@ -16,15 +16,23 @@ So:
 1. Bump `version` in `package.json`.
 2. Add a row to the compatibility table at the top of `README.md` saying which
    Claude Code version this was built and tested against, and what it fixes.
-3. Tag with the changelog as the message:
+3. Tag with the changelog as the message. **`--cleanup=verbatim` is required**:
+   without it git treats every line starting with `#` as a comment and deletes
+   it, which silently ate the heading from v0.1.3 and v0.1.4.
 
    ```bash
-   git tag -a v0.1.4 -m "## Fixed in 0.1.4
+   git tag -a --cleanup=verbatim v0.1.5 -m "## Fixed in 0.1.5
 
    <what changed, and why it mattered>
 
    Built and tested against **Claude Code 2.1.NNN**."
-   git push origin main v0.1.4
+   git push origin main v0.1.5
+   ```
+
+   Check it survived before pushing:
+
+   ```bash
+   git tag -l --format='%(contents)' v0.1.5 | head -1   # must show the heading
    ```
 
 `.github/RELEASE_NOTES.md` is the **standing install guide only**. Do not put a
