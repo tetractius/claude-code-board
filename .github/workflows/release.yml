@@ -54,6 +54,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Notes = what the tag itself says, then the standing install guide.
+      # A changelog written into the file goes stale the moment it is reused.
+      - name: Assemble release notes
+        run: |
+          git fetch --tags --force --depth=1 origin "+refs/tags/*:refs/tags/*" || true
+          : > notes.md
+          msg=$(git tag -l --format='%(contents)' "${{ github.event.inputs.tag || github.ref_name }}")
+          if [ -n "$(printf '%s' "$msg" | tr -d '[:space:]')" ]; then
+            printf '%s\n\n---\n\n' "$msg" >> notes.md
+          fi
+          cat .github/RELEASE_NOTES.md >> notes.md
+
       - uses: actions/download-artifact@v4
         with: { path: dist, merge-multiple: true }
       - run: ls -lh dist
@@ -69,8 +81,8 @@ jobs:
             echo "Release $TAG exists - replacing its assets"
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --notes-file .github/RELEASE_NOTES.md
+              --notes-file notes.md
           else
             gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" --notes-file .github/RELEASE_NOTES.md
+              --title "$TAG" --notes-file notes.md
           fi

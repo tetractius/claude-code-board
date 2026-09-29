@@ -1,22 +1,6 @@
-## Fixed in 0.1.2
-
-**The delete guard could delete a running session.** It looked up live sessions
-by grepping `~/.claude/sessions/*.json`, which Claude 2.1.28x no longer writes,
-so the check always came back empty and the generated script deleted whatever it
-was given. The script now carries the pid the board saw and re-checks it with
-`ps`. **If you are on 0.1.1, update.**
-
-## Claude Code compatibility
-
-Built and tested against **Claude Code 2.1.284**.
-
-Claude 2.1.28x removed `~/.claude/sessions/<pid>.json` and stopped listing
-interactive sessions in `claude agents --json`. Board 0.1.0 shows an empty
-board on those versions — **0.1.1 or later is required for Claude 2.1.28x**.
-
-One consequence: interactive sessions now report only `active` or `exited`.
-Idle/busy/waiting was published solely through the registry that is gone.
-Background jobs still report full state.
+Compatibility with each Claude Code version is tracked in the
+[README](https://github.com/tetractius/claude-code-board#readme). On Claude
+2.1.28x, board 0.1.3 or later is required.
 
 ## Install
 
