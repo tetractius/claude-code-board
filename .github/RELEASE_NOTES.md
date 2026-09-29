@@ -1,3 +1,15 @@
+## Claude Code compatibility
+
+Built and tested against **Claude Code 2.1.284**.
+
+Claude 2.1.28x removed `~/.claude/sessions/<pid>.json` and stopped listing
+interactive sessions in `claude agents --json`. Board 0.1.0 shows an empty
+board on those versions — **0.1.1 or later is required for Claude 2.1.28x**.
+
+One consequence: interactive sessions now report only `active` or `exited`.
+Idle/busy/waiting was published solely through the registry that is gone.
+Background jobs still report full state.
+
 ## Install
 
 ### macOS

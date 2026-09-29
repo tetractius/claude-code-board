@@ -9,6 +9,26 @@ A dark-only desktop board for every Claude Code session on the machine — live,
 background, and finished-but-not-yet-collected — with per-session notes and
 copy-ready resume/delete commands.
 
+## Claude Code versions
+
+The board reads Claude's own on-disk state, and Claude changes it. What each
+board release expects:
+
+| Board | Claude Code | Status reporting |
+| --- | --- | --- |
+| **0.1.1** | **2.1.284** (built and tested against) | `active` / `exited` for interactive sessions; full status for background jobs |
+| 0.1.0 | up to 2.1.273 | full `idle` / `busy` / `waiting` |
+
+Claude 2.1.28x removed `~/.claude/sessions/<pid>.json` and stopped listing
+interactive sessions in `claude agents --json`. 0.1.0 shows an empty board on
+those versions; 0.1.1 finds the sessions again but can only report whether one
+is running, not what it is doing — nothing publishes idle/busy/waiting any more.
+The exact release that dropped the registry is somewhere in 2.1.274–2.1.283,
+untested here.
+
+Background jobs are unaffected either way: `claude agents --json` still reports
+their `state`.
+
 ## Run it
 
 ```bash
