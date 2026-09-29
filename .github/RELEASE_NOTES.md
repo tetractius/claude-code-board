@@ -1,3 +1,11 @@
+## Fixed in 0.1.2
+
+**The delete guard could delete a running session.** It looked up live sessions
+by grepping `~/.claude/sessions/*.json`, which Claude 2.1.28x no longer writes,
+so the check always came back empty and the generated script deleted whatever it
+was given. The script now carries the pid the board saw and re-checks it with
+`ps`. **If you are on 0.1.1, update.**
+
 ## Claude Code compatibility
 
 Built and tested against **Claude Code 2.1.284**.

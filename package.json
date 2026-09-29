@@ -1,6 +1,6 @@
 {
   "name": "claude-code-board",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A board for monitoring, annotating and resuming Claude Code sessions",
   "main": "./out/main/index.js",
   "author": "fil",

@@ -16,7 +16,8 @@ board release expects:
 
 | Board | Claude Code | Status reporting |
 | --- | --- | --- |
-| **0.1.1** | **2.1.284** (built and tested against) | `active` / `exited` for interactive sessions; full status for background jobs |
+| **0.1.2** | **2.1.284** (built and tested against) | `active` / `exited` for interactive sessions; full status for background jobs |
+| 0.1.1 | 2.1.284 | as 0.1.2, but its delete guard fails open — **do not use** |
 | 0.1.0 | up to 2.1.273 | full `idle` / `busy` / `waiting` |
 
 Claude 2.1.28x removed `~/.claude/sessions/<pid>.json` and stopped listing
