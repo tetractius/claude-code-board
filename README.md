@@ -140,6 +140,7 @@ pids. Each entry is then enriched from:
 | `~/.claude/history.jsonl` | when you last prompted the session |
 | `ps` | which terminal a session is sitting in |
 | `entrypoint` | which host is running it — `cli`, `vscode`, `desktop`, `sdk-cli` |
+| `~/.claude/sessions/*.key` + `lsof` | live interactive sessions, since Claude 2.1.28x stopped recording them |
 | `parkedJobId` across `~/.claude/sessions/*.json` | which terminal a *background job* is attached to |
 
 Card titles come from the transcript's `custom-title` record first — the name
@@ -148,6 +149,14 @@ that were never renamed, and once a session ends its registry entry is gone
 entirely, so the transcript is the only place a rename survives. Only if there
 is no rename does the card fall back to the model-generated `ai-title`, then to
 the directory name.
+
+Claude 2.1.28x stopped writing `~/.claude/sessions/<pid>.json` and stopped
+listing interactive sessions in `claude agents --json`, so neither source knows
+they exist any more. They are found instead from the `<pid>.<hash>.key` file
+each live session still leaves, `lsof` for its working directory, and the newest
+transcript in that directory's project folder. Their **status shows as
+`unknown`** — idle/busy/waiting was only ever published through the registry
+that is now gone.
 
 A background job whose worker has no terminal is still on screen if an
 interactive session is *parked* on it — that session's registry entry carries

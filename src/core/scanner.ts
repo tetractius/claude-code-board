@@ -1,6 +1,11 @@
 import { basename } from 'node:path'
 import { listAgents, resolveClaudeBin, type AgentEntry } from './claudeCli.ts'
-import { readAllRegistry, readRegistry, type RegistryEntry } from './registry.ts'
+import {
+  discoverLiveSessions,
+  readAllRegistry,
+  readRegistry,
+  type RegistryEntry,
+} from './registry.ts'
 import { readJobState, type JobState } from './jobs.ts'
 import { buildTranscriptIndex, readTranscriptMeta, pruneTranscriptCache } from './transcripts.ts'
 import { buildHistoryIndex } from './history.ts'
@@ -304,6 +309,22 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
   for (const e of alive) if (e.parkedJobId) parked.set(e.parkedJobId, e)
   const liveSessionIds = new Set(alive.map((e) => e.sessionId).filter(Boolean) as string[])
   pruneTranscriptCache(new Set(transcripts.values()))
+
+  /*
+   * `claude agents --json` stopped listing interactive sessions, so they are
+   * discovered from the live pids instead and appended as if it had. Skip any
+   * session the listing already covers, or a background job with a terminal
+   * attached would be listed twice.
+   */
+  const discovered = await discoverLiveSessions(
+    (pid) => isClaudeProcess(procs.get(pid)),
+    transcripts,
+  )
+  for (const d of discovered) {
+    if (entries.some((e) => e.sessionId === d.sessionId || e.pid === d.pid)) continue
+    entries.push({ pid: d.pid, cwd: d.cwd, sessionId: d.sessionId, kind: 'interactive' })
+    liveSessionIds.add(d.sessionId)
+  }
 
   const sessions = await Promise.all(
     entries.map((entry) =>

@@ -18,7 +18,8 @@
     "smoke": "node scripts/smoke.ts",
     "icon": "electron scripts/make-icon.mjs",
     "brand:dev": "node scripts/brand-dev.mjs",
-    "dist:mac:all": "npm run build && electron-builder --mac --arm64 --x64 --publish never && cp scripts/install-macos.sh release/"
+    "dist:mac:all": "npm run build && electron-builder --mac --arm64 --x64 --publish never && cp scripts/install-macos.sh release/",
+    "test": "node scripts/test-discovery.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
