@@ -70,6 +70,12 @@ const STATUS_STYLES: Record<Status, StatusStyle> = {
     urgent: true,
     active: false,
   },
+  active: {
+    dot: 'bg-verdigris',
+    label: 'active',
+    urgent: false,
+    active: false,
+  },
   idle: {
     dot: 'bg-verdigris',
     label: 'idle',

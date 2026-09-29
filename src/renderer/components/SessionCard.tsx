@@ -94,9 +94,10 @@ function SessionCard({
           status={s.status}
           waitingFor={s.waitingFor}
           hint={
-            s.status === 'unknown'
-              ? `${s.where.label} does not publish session status — only terminal ` +
-                'sessions send heartbeats, so the board cannot tell idle from busy here.'
+            s.status === 'active'
+              ? 'Running. Claude no longer publishes idle/busy/waiting for ' +
+                'interactive sessions, so the board can tell it is alive but not ' +
+                'what it is doing.'
               : undefined
           }
         />

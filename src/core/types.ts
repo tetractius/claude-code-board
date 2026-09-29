@@ -15,6 +15,7 @@ export type Status =
   | 'busy'
   | 'waiting'
   | 'idle'
+  | 'active'
   | 'working'
   | 'blocked'
   | 'done'

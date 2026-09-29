@@ -42,7 +42,10 @@ function deriveStatus(entry: AgentEntry, live: boolean, attached: RegistryEntry 
   }
   if (entry.status) return entry.status
   if (!live) return 'exited'
-  return 'unknown'
+  // The process is there, which is knowable; what it is doing is not. Since
+  // 2.1.28x nothing publishes idle/busy/waiting for interactive sessions, and
+  // the desktop and VS Code hosts never did.
+  return 'active'
 }
 
 function ttyOf(proc: ProcInfo | undefined): string | null {

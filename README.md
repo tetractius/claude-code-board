@@ -154,9 +154,10 @@ Claude 2.1.28x stopped writing `~/.claude/sessions/<pid>.json` and stopped
 listing interactive sessions in `claude agents --json`, so neither source knows
 they exist any more. They are found instead from the `<pid>.<hash>.key` file
 each live session still leaves, `lsof` for its working directory, and the newest
-transcript in that directory's project folder. Their **status shows as
-`unknown`** — idle/busy/waiting was only ever published through the registry
-that is now gone.
+transcript in that directory's project folder. Alive-versus-exited is still exact: a `.key` file with a live pid behind it
+means running, and nothing means gone. What is lost is the finer split — those
+sessions show as **`active`** rather than idle/busy/waiting, which was only ever
+published through the registry that is now gone.
 
 A background job whose worker has no terminal is still on screen if an
 interactive session is *parked* on it — that session's registry entry carries
