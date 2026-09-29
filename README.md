@@ -16,7 +16,8 @@ board release expects:
 
 | Board | Claude Code | Status reporting |
 | --- | --- | --- |
-| **0.1.3** | **2.1.285** (built and tested against) | as 0.1.2, and finds sessions that have no transcript yet |
+| **0.1.4** | **2.1.285** (built and tested against) | as 0.1.3; no longer needs `lsof` on Linux |
+| 0.1.3 | 2.1.285 | finds sessions that have no transcript yet |
 | 0.1.2 | 2.1.284 | misses a session started as a bare `claude` until its transcript is written |
 | 0.1.1 | 2.1.284 | as 0.1.2, but its delete guard fails open — **do not use** |
 | 0.1.0 | up to 2.1.273 | full `idle` / `busy` / `waiting` |
@@ -255,6 +256,20 @@ renamed in the VS Code extension keeps `nameSource: "derived"` and writes no
 primary signal. Claude rewrites transcripts wholesale during compaction, so
 unrelated sessions in different projects end up sharing an mtime. Where mtime is
 the only thing left, the card marks the time with `*`.
+
+## What differs on Linux
+
+The board itself works the same: sessions are found from `ps`, and the cwd
+comes from `/proc/<pid>/cwd` rather than `lsof`, so nothing extra needs
+installing. Two features are macOS-only and degrade rather than fail:
+
+| Feature | Linux |
+| --- | --- |
+| `↗ ttys…` jump to a session's terminal | not a button — mapping a tty back to a window has no portable equivalent |
+| Reading a `/rename` from the terminal title | unavailable, so a session with no transcript yet shows its directory name until Claude writes one |
+
+"Open in Terminal" does work, through the configurable `terminalExec`
+(default `x-terminal-emulator`).
 
 ## Keyboard
 
