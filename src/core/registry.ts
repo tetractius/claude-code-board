@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from 'node:child_process'
-import { readdir, stat } from 'node:fs/promises'
+import { readdir, readlink, stat } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -164,6 +164,15 @@ export function slugifyCwd(cwd: string): string {
 }
 
 async function cwdOf(pid: number): Promise<string | null> {
+  // Linux has it as a symlink, with no process to spawn and no dependency on
+  // lsof being installed - which it often is not on a minimal system.
+  if (process.platform === 'linux') {
+    try {
+      return await readlink(`/proc/${pid}/cwd`)
+    } catch {
+      return null
+    }
+  }
   try {
     const { stdout } = await execFile('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'])
     const line = stdout.split('\n').find((l) => l.startsWith('n/'))
