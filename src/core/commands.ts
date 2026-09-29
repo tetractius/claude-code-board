@@ -32,6 +32,10 @@ function declarations(s: BoardSession): string[] {
   const lines: string[] = []
   if (s.jobId) lines.push(`JOB=${shellQuote(s.jobId)}`)
   else lines.push(`SESSION=${shellQuote(s.sessionId)}`)
+  // Taken when this panel was opened. Since 2.1.28x nothing on disk maps a
+  // session id back to its process, so the board passes the pid through and
+  // the script re-checks that it is still a live claude.
+  lines.push(`PID=${s.live && s.pid ? s.pid : '-'}`)
   if (s.transcriptPath) {
     // The project directory gets its own line: the full path is ~110
     // characters and would wrap, which is what makes a command hard to read.
@@ -73,6 +77,9 @@ export function buildGuardedDelete(s: BoardSession): string {
     ...declarations(s),
     '',
     'BUSY=$(',
+    '  [ "$PID" != "-" ] && ps -p "$PID" -o comm= 2>/dev/null | grep -qi claude \\',
+    '    && printf \'%s \' "$PID"',
+    '',
     `  grep ${grepArgs} "$HOME"/.claude/sessions/*.json 2>/dev/null \\`,
     "    | sed 's#.*/##; s#\\.json$##' \\",
     '    | while read -r pid; do',
@@ -164,7 +171,12 @@ export function buildDeletePanel(s: BoardSession): DeletePanel {
 }
 
 /**
- * One line per session for the bulk scripts: `<session-uuid> <job-id or ->`.
+ * One line per session for the bulk scripts:
+ * `<session-uuid> <job-id or -> <pid or ->`.
+ *
+ * The pid is a snapshot from when the panel was opened - since 2.1.28x nothing
+ * on disk maps a session id back to its process, so the script re-checks that
+ * pid rather than looking one up.
  *
  * Transcripts are matched by uuid glob rather than by full path - every
  * transcript is `projects/<slug>/<uuid>.jsonl`, and a uuid cannot glob onto
@@ -174,7 +186,7 @@ export function buildDeletePanel(s: BoardSession): DeletePanel {
 function targetLines(sessions: BoardSession[]): string[] {
   return sessions
     .filter((s) => s.sessionId)
-    .map((s) => `${s.sessionId} ${s.jobId ?? '-'}`)
+    .map((s) => `${s.sessionId} ${s.jobId ?? '-'} ${s.live && s.pid ? s.pid : '-'}`)
 }
 
 function heredoc(lines: string[]): string[] {
@@ -193,10 +205,13 @@ export function buildBulkGuardedDelete(sessions: BoardSession[]): string {
   if (targets.length === 0) return '# Nothing selected.'
 
   return [
-    'while read -r SESSION JOB; do',
+    'while read -r SESSION JOB PID; do',
     '  [ -n "$SESSION" ] || continue',
     '',
     '  BUSY=$(',
+    '    [ "$PID" != "-" ] && ps -p "$PID" -o comm= 2>/dev/null | grep -qi claude \\',
+    '      && printf \'%s \' "$PID"',
+    '',
     '    grep -lE "\\"(sessionId|jobId|parkedJobId)\\":\\"($SESSION|$JOB)\\"" \\',
     '         "$HOME"/.claude/sessions/*.json 2>/dev/null \\',
     "      | sed 's#.*/##; s#\\.json$##' \\",
@@ -224,7 +239,7 @@ export function buildBulkUnguardedDelete(sessions: BoardSession[]): string {
   if (targets.length === 0) return '# Nothing selected.'
 
   return [
-    'while read -r SESSION JOB; do',
+    'while read -r SESSION JOB PID; do',
     '  [ -n "$SESSION" ] || continue',
     '  rm -f "$HOME"/.claude/projects/*/"$SESSION".jsonl',
     '  [ "$JOB" = "-" ] || rm -rf "$HOME/.claude/jobs/$JOB"',

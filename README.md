@@ -148,25 +148,32 @@ touch this path.
 
 ## What the cards show
 
-`claude agents --json --all` is the spine of every scan — it is the only thing
-that correctly hides sessions parked into a background job and de-duplicates
-pids. Each entry is then enriched from:
+Sessions come from two places, because no single source lists them all any
+more. `claude agents --json --all` reports background jobs. Live interactive
+sessions are discovered from the `<pid>.<hash>.key` file each one leaves in
+`~/.claude/sessions/`, with `lsof` for its working directory and the newest
+transcript in that directory's project folder. Each is then enriched from:
 
-| Source | What it contributes |
-| --- | --- |
-| `~/.claude/sessions/<pid>.json` | live status (`idle`/`busy`/`waiting`), `waitingFor`, entrypoint, running version, last status change |
-| `~/.claude/jobs/<id>/state.json` | background `detail`, `needs`, linked PRs, token count, fork lineage, resume id |
-| `~/.claude/projects/**/*.jsonl` | the `/rename` title, model-generated title, last prompt |
-| `~/.claude/history.jsonl` | when you last prompted the session |
-| `ps` | which terminal a session is sitting in |
-| `entrypoint` | which host is running it — `cli`, `vscode`, `desktop`, `sdk-cli` |
-| `~/.claude/sessions/*.key` + `lsof` | live interactive sessions, since Claude 2.1.28x stopped recording them |
-| `parkedJobId` across `~/.claude/sessions/*.json` | which terminal a *background job* is attached to |
+| Source | What it contributes | |
+| --- | --- | --- |
+| `~/.claude/jobs/<id>/state.json` | background `detail`, `needs`, linked PRs, token count, fork lineage, resume id | |
+| `~/.claude/projects/**/*.jsonl` | the `/rename` title, model-generated title, last prompt, entrypoint, last message time | |
+| `~/.claude/history.jsonl` | when you last prompted the session (CLI only) | |
+| `ps` | which terminal a session is sitting in, and whether a pid is really Claude | |
+| `lsof -d cwd` | a live session's working directory | |
+| `~/.claude/sessions/<pid>.json` | *was* live status, `waitingFor`, entrypoint, running version | **gone in 2.1.28x** |
+| `parkedJobId` across `~/.claude/sessions/*.json` | *was* which terminal a background job is attached to | **gone with it** |
+
+Two features went with that file. Interactive sessions no longer report
+`idle`/`busy`/`waiting` — only `active` or `exited`. And a background job that
+has a terminal attached is no longer shown as sitting in that terminal, because
+nothing records the attachment; it reads as `background` again. The code that
+reads both is still there and starts working the moment Claude publishes an
+equivalent.
 
 Card titles come from the transcript's `custom-title` record first — the name
-you set with `/rename`. `agents --json` reports a *derived* name for sessions
-that were never renamed, and once a session ends its registry entry is gone
-entirely, so the transcript is the only place a rename survives. Only if there
+you set with `/rename`. Nothing else survives a session ending, so
+the transcript is the only place a rename is kept. Only if there
 is no rename does the card fall back to the model-generated `ai-title`, then to
 the directory name.
 
@@ -200,8 +207,8 @@ cards carry a `⚡ -p` tag with the slash command that launched them, e.g.
 `⚡ -p /daily-standup`, and the toolbar has a chip that filters the board down
 to just them.
 
-The entrypoint is read from the transcript rather than the registry, because a
-headless run's registry entry is gone the moment it exits. It is also the only
+The entrypoint is read from the transcript, which is the only place it survives
+once a run exits. It is also the only
 reliable marker: these runs report `entrypoint: "cli"` on their *process*, write
 nothing to `history.jsonl`, and Claude never generates an `ai-title` for them,
 so their cards fall back to the directory name — which is exactly why the tag
@@ -222,10 +229,9 @@ A session's `entrypoint` is `claude-<host>` for every non-terminal front end —
 `claude-desktop`, `claude-vscode`, and whatever comes next — so the card names
 the host rather than showing a dash.
 
-Those hosts publish **no status heartbeat**: their registry entry has no
-`status`, `updatedAt` or `statusUpdatedAt` at all, so the board genuinely cannot
-tell idle from busy and shows `unknown`. The badge says so on hover. They also
-never write to `history.jsonl`, which only records prompts typed in the CLI —
+Those hosts never published a status heartbeat, and since 2.1.28x nothing does,
+so they show as `active` like any other running session. They also never write
+to `history.jsonl`, which only records prompts typed in the CLI —
 which is why the activity ladder reads the last message timestamp straight out
 of the transcript.
 
@@ -308,10 +314,9 @@ The panel offers two options, each with its own copy button so you take one or
 the other:
 
 **Guarded** refuses while any live Claude process still holds the session. It
-matches both `jobId` and `parkedJobId` across `~/.claude/sessions/*.json`, so it
-catches the background worker *and* any terminal attached to the job, and
-cross-checks each pid with `ps` because the registry keeps records for pids that
-are long gone.
+matches both `jobId` and `parkedJobId` across `~/.claude/sessions/*.json` where
+those still exist, so it catches the background worker *and* any terminal
+attached to the job, and cross-checks every pid with `ps`.
 
 **Unguarded** removes the same things with no check at all, for when you already
 know nothing is running.
