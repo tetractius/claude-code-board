@@ -171,3 +171,62 @@ export async function focusTty(tty: string): Promise<string> {
 
   throw new Error(`No open terminal window is on ${tty} — it may have been closed.`)
 }
+
+/**
+ * Session names as the terminal currently shows them, keyed by tty.
+ *
+ * Claude keeps the terminal title in step with the session name, so this is
+ * the only live source for a `/rename` on a session whose transcript has not
+ * been written yet - which, since 2.1.28x, is every freshly started one.
+ *
+ * macOS only, and best-effort: a failure just means no title from here.
+ */
+let titleCache: { at: number; titles: Map<string, string> } | null = null
+/* Scans also fire on file-system events, and each AppleScript round trip costs
+ * ~500ms, so a short cache keeps a burst from hammering iTerm. */
+const TITLE_TTL_MS = 3000
+
+export async function readTerminalTitles(): Promise<Map<string, string>> {
+  if (titleCache && Date.now() - titleCache.at < TITLE_TTL_MS) return titleCache.titles
+
+  const titles = new Map<string, string>()
+  if (process.platform !== 'darwin') return titles
+
+  const script = `
+    set out to ""
+    tell application "iTerm"
+      repeat with w in windows
+        repeat with t in tabs of w
+          repeat with s in sessions of t
+            set out to out & (tty of s) & "\t" & (name of s) & linefeed
+          end repeat
+        end repeat
+      end repeat
+    end tell
+    return out`
+
+  let stdout: string
+  try {
+    if (!(await isRunning('iTerm2'))) return titles
+    ;({ stdout } = await run('osascript', ['-e', script], { timeout: 10_000 }))
+  } catch {
+    return titles
+  }
+
+  for (const line of stdout.split('\n')) {
+    const [dev, ...rest] = line.split('\t')
+    if (!dev?.startsWith('/dev/')) continue
+    // Claude suffixes the terminal title with "(claude)"; requiring it is what
+    // separates a session from a plain shell sitting at "-bash".
+    const raw = rest.join('\t')
+    if (!/\(claude\)\s*$/.test(raw)) continue
+    // "✳ Release page v2026.09.7 (claude)" -> "Release page v2026.09.7"
+    const name = raw
+      .replace(/\s*\(claude\)\s*$/, '')
+      .replace(/^[^\p{L}\p{N}]+/u, '')
+      .trim()
+    if (name) titles.set(dev.replace('/dev/', ''), name)
+  }
+  titleCache = { at: Date.now(), titles }
+  return titles
+}

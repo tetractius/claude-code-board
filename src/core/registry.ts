@@ -4,8 +4,11 @@ import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 
 const execFile = promisify(execFileCb)
-import { REGISTRY_DIR } from './paths.ts'
+import { PROJECTS_DIR, REGISTRY_DIR } from './paths.ts'
+import { isClaudeProcess, resumedSessionId, type ProcInfo } from './ps.ts'
 import { readJson } from './util.ts'
+
+const UUID_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** A `~/.claude/sessions/<pid>.json` record. */
 export interface RegistryEntry {
@@ -70,7 +73,7 @@ export async function readAllRegistry(): Promise<RegistryEntry[]> {
  * supplies the title and the activity time, and the status shows as unknown.
  */
 export async function discoverLiveSessions(
-  isAlive: (pid: number) => boolean,
+  procs: Map<number, ProcInfo>,
   transcripts: Map<string, string>,
 ): Promise<{ pid: number; cwd: string; sessionId: string }[]> {
   let files: string[]
@@ -80,9 +83,14 @@ export async function discoverLiveSessions(
     return []
   }
 
-  const pids = files
-    .map((f) => Number(f.split('.')[0]))
-    .filter((pid) => Number.isInteger(pid) && isAlive(pid))
+  const isAlive = (pid: number) => isClaudeProcess(procs.get(pid))
+  const pids = [
+    ...new Set(
+      files
+        .map((f) => Number(f.split('.')[0]))
+        .filter((pid) => Number.isInteger(pid) && isAlive(pid)),
+    ),
+  ]
 
   // Newest transcript first, so each cwd's most recent one is claimed first and
   // two sessions in the same directory do not both match the same file.
@@ -95,18 +103,57 @@ export async function discoverLiveSessions(
   )
   byMtime.sort((a, b) => b.mtimeMs - a.mtimeMs)
 
+  /**
+   * Session directories - `projects/<slug>/<uuid>/`, holding subagents and
+   * tool results - appear as soon as a session does something, while its
+   * transcript may not be written until much later. For a session started as a
+   * bare `claude` this is often the only place its id exists on disk.
+   */
+  const sessionDirs = async (slug: string) => {
+    try {
+      const entries = await readdir(join(PROJECTS_DIR, slug), { withFileTypes: true })
+      const dirs = entries.filter((e) => e.isDirectory() && UUID_NAME.test(e.name))
+      return (
+        await Promise.all(
+          dirs.map(async (e) => ({
+            sessionId: e.name,
+            mtimeMs: await stat(join(PROJECTS_DIR, slug, e.name)).then(
+              (s) => s.mtimeMs,
+              () => 0,
+            ),
+          })),
+        )
+      ).sort((a, b) => b.mtimeMs - a.mtimeMs)
+    } catch {
+      return []
+    }
+  }
+
   const claimed = new Set<string>()
   const out: { pid: number; cwd: string; sessionId: string }[] = []
   for (const pid of pids) {
     const cwd = await cwdOf(pid)
     if (!cwd) continue
     const slug = slugifyCwd(cwd)
-    const match = byMtime.find(
+
+    /*
+     * Exact first, guesswork last. `--resume <uuid>` is authoritative and is
+     * deliberately not subject to `claimed`: two terminals resuming the same
+     * session must both resolve to it, and the caller collapses them into one
+     * card.
+     */
+    let sessionId = resumedSessionId(procs.get(pid))
+
+    sessionId ??= (await sessionDirs(slug)).find((d) => !claimed.has(d.sessionId))?.sessionId
+
+    sessionId ??= byMtime.find(
       (t) => !claimed.has(t.sessionId) && basename(dirname(t.path)) === slug,
-    )
-    if (!match) continue
-    claimed.add(match.sessionId)
-    out.push({ pid, cwd, sessionId: match.sessionId })
+    )?.sessionId
+
+    // Still unknown: show the session anyway. A card with no id is far more
+    // use than a running session missing from the board entirely.
+    if (sessionId) claimed.add(sessionId)
+    out.push({ pid, cwd, sessionId: sessionId ?? '' })
   }
   return out
 }

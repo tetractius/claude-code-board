@@ -11,6 +11,7 @@ import { buildTranscriptIndex, readTranscriptMeta, pruneTranscriptCache } from '
 import { buildHistoryIndex } from './history.ts'
 import { buildProcIndex, isClaudeProcess, type ProcInfo } from './ps.ts'
 import { resolveActivity } from './activity.ts'
+import { readTerminalTitles } from './terminal.ts'
 import { compareVersions, toMs } from './util.ts'
 import { TERMINAL_STATUS, NEEDS_ATTENTION } from './types.ts'
 import type { BoardSession, ScanResult, Status, Where } from './types.ts'
@@ -99,6 +100,8 @@ async function buildSession(
     procs: Map<number, ProcInfo>
     /** Interactive sessions parked on a background job, keyed by job id. */
     parked: Map<string, RegistryEntry>
+    /** Live session names from the terminal, keyed by tty. */
+    ttyTitles: Map<string, string>
     /** Version of the installed binary, for the restart-needed check. */
     installed: string
   },
@@ -122,6 +125,13 @@ async function buildSession(
   const transcriptPath = sessionId ? ctx.transcripts.get(sessionId) : undefined
   const meta = transcriptPath ? await readTranscriptMeta(transcriptPath) : null
 
+  const entrypoint = registry?.entrypoint ?? meta?.entrypoint
+  const where = deriveWhere(entry.kind ?? 'interactive', proc, entrypoint, attachedProc)
+  // Since 2.1.28x a freshly started session has no transcript, so a /rename
+  // exists nowhere on disk. Claude does keep the terminal title in step with
+  // it, which is the only live source left.
+  const ttyTitle = where.type === 'tty' ? ctx.ttyTitles.get(where.label) : undefined
+
   /*
    * Title precedence, matching what Claude's own front ends show.
    *
@@ -140,6 +150,7 @@ async function buildSession(
     stripFork(meta?.customTitle ?? '') ||
     (derived ? '' : reported) ||
     meta?.aiTitle ||
+    ttyTitle ||
     reported ||
     basename(entry.cwd ?? '') ||
     'untitled'
@@ -153,7 +164,6 @@ async function buildSession(
     transcriptMtime: meta?.mtimeMs,
   })
 
-  const entrypoint = registry?.entrypoint ?? meta?.entrypoint
   const status = deriveStatus(entry, live, attached)
 
   // A running process keeps executing the build it started with, so an update
@@ -178,7 +188,7 @@ async function buildSession(
     pid,
     kind: entry.kind === 'background' ? 'background' : 'interactive',
     cwd: entry.cwd ?? job?.cwd ?? '?',
-    where: deriveWhere(entry.kind ?? 'interactive', proc, entrypoint, attachedProc),
+    where,
     attachedPid: attached?.pid,
     entrypoint,
     headless: entrypoint === 'sdk-cli',
@@ -304,6 +314,7 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
     buildProcIndex(),
     readAllRegistry(),
   ])
+  const ttyTitles = await readTerminalTitles()
 
   // Only registry entries backed by a live claude process count; the directory
   // accumulates records for pids that exited long ago.
@@ -319,19 +330,21 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
    * session the listing already covers, or a background job with a terminal
    * attached would be listed twice.
    */
-  const discovered = await discoverLiveSessions(
-    (pid) => isClaudeProcess(procs.get(pid)),
-    transcripts,
-  )
+  const discovered = await discoverLiveSessions(procs, transcripts)
   for (const d of discovered) {
-    if (entries.some((e) => e.sessionId === d.sessionId || e.pid === d.pid)) continue
+    // An empty id means "unidentified", so it must not collapse every such
+    // session onto one card - match on pid instead.
+    const dup = d.sessionId
+      ? entries.some((e) => e.sessionId === d.sessionId || e.pid === d.pid)
+      : entries.some((e) => e.pid === d.pid)
+    if (dup) continue
     entries.push({ pid: d.pid, cwd: d.cwd, sessionId: d.sessionId, kind: 'interactive' })
     liveSessionIds.add(d.sessionId)
   }
 
   const sessions = await Promise.all(
     entries.map((entry) =>
-      buildSession(entry, { transcripts, history, procs, parked, installed: bin.semver }),
+      buildSession(entry, { transcripts, history, procs, parked, ttyTitles, installed: bin.semver }),
     ),
   )
 

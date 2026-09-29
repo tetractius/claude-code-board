@@ -31,7 +31,7 @@ function homePath(absolute: string): string {
 function declarations(s: BoardSession): string[] {
   const lines: string[] = []
   if (s.jobId) lines.push(`JOB=${shellQuote(s.jobId)}`)
-  else lines.push(`SESSION=${shellQuote(s.sessionId)}`)
+  if (s.sessionId) lines.push(`SESSION=${shellQuote(s.sessionId)}`)
   // Taken when this panel was opened. Since 2.1.28x nothing on disk maps a
   // session id back to its process, so the board passes the pid through and
   // the script re-checks that it is still a live claude.
@@ -50,6 +50,16 @@ function removals(s: BoardSession): string[] {
   const out: string[] = []
   if (s.jobId) out.push('rm -rf "$HOME/.claude/jobs/${JOB:?}"')
   if (s.transcriptPath) out.push('rm -f "${TRANSCRIPT:?}"')
+  /*
+   * The session directory holds subagent transcripts and tool results. Since
+   * 2.1.28x it appears while the session runs even though the transcript does
+   * not, so for a freshly started session it is the only thing on disk - and
+   * without this the panel would claim there was nothing to remove.
+   *
+   * Globbed by id rather than by a known path: the directory may exist under a
+   * project slug we never resolved a transcript for.
+   */
+  if (s.sessionId) out.push('rm -rf "$HOME"/.claude/projects/*/"${SESSION:?}"')
   return out
 }
 

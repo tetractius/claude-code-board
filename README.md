@@ -16,7 +16,8 @@ board release expects:
 
 | Board | Claude Code | Status reporting |
 | --- | --- | --- |
-| **0.1.2** | **2.1.284** (built and tested against) | `active` / `exited` for interactive sessions; full status for background jobs |
+| **0.1.3** | **2.1.285** (built and tested against) | as 0.1.2, and finds sessions that have no transcript yet |
+| 0.1.2 | 2.1.284 | misses a session started as a bare `claude` until its transcript is written |
 | 0.1.1 | 2.1.284 | as 0.1.2, but its delete guard fails open — **do not use** |
 | 0.1.0 | up to 2.1.273 | full `idle` / `busy` / `waiting` |
 
@@ -26,6 +27,15 @@ those versions; 0.1.1 finds the sessions again but can only report whether one
 is running, not what it is doing — nothing publishes idle/busy/waiting any more.
 The exact release that dropped the registry is somewhere in 2.1.274–2.1.283,
 untested here.
+
+2.1.285 goes further: a freshly started session gets no transcript file at all
+until later, only a `projects/<slug>/<uuid>/` directory beside it. 0.1.2 matched
+a process to its session through that transcript, so such a session was missing
+from the board entirely and a `/rename` had nothing to read. 0.1.3 takes the id
+from `--resume` on the command line where there is one, falls back to the
+session directory, and reads the name from the terminal title — which Claude
+keeps in step with `/rename` and is the only live source while the transcript
+does not exist.
 
 Background jobs are unaffected either way: `claude agents --json` still reports
 their `state`.
