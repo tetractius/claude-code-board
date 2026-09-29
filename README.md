@@ -29,14 +29,28 @@ is running, not what it is doing — nothing publishes idle/busy/waiting any mor
 The exact release that dropped the registry is somewhere in 2.1.274–2.1.283,
 untested here.
 
-2.1.285 goes further: a freshly started session gets no transcript file at all
-until later, only a `projects/<slug>/<uuid>/` directory beside it. 0.1.2 matched
-a process to its session through that transcript, so such a session was missing
-from the board entirely and a `/rename` had nothing to read. 0.1.3 takes the id
-from `--resume` on the command line where there is one, falls back to the
-session directory, and reads the name from the terminal title — which Claude
-keeps in step with `/rename` and is the only live source while the transcript
-does not exist.
+A session may also have **no transcript at all**. The usual cause is transcript
+persistence being switched off, which Claude announces in the session itself:
+
+> Transcript saving is off — inherited `CLAUDE_CODE_CHILD_SESSION` marker
+
+Any `claude` started from a shell that carries that variable — a terminal
+opened from inside another session, for instance — is treated as a child and
+saves nothing. All that appears on disk is a `projects/<slug>/<uuid>/`
+directory for its tool results. Clear the marker in interactive shells to get
+transcripts back:
+
+```bash
+# ~/.zshrc — an interactive shell is not a child session, whatever spawned it
+case $- in *i*) unset CLAUDE_CODE_CHILD_SESSION ;; esac
+```
+
+0.1.2 matched a process to its session through that transcript, so such a
+session was missing from the board entirely and a `/rename` had nothing to
+read. 0.1.3 takes the id from `--resume` on the command line where there is
+one, falls back to the session directory, and reads the name from the terminal
+title — which Claude keeps in step with `/rename` and is the only live source
+when no transcript exists.
 
 Background jobs are unaffected either way: `claude agents --json` still reports
 their `state`.

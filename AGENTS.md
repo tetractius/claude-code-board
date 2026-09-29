@@ -50,9 +50,10 @@ versions have already broken it:
 
 - **2.1.28x** stopped writing `~/.claude/sessions/<pid>.json` and stopped
   listing interactive sessions in `claude agents --json`.
-- **2.1.285** stopped writing a session's transcript until some time after it
-  starts, so a new session exists on disk only as
-  `projects/<slug>/<uuid>/`.
+- A session can have **no transcript at all**, so it exists on disk only as
+  `projects/<slug>/<uuid>/`. Usually this is transcript persistence being off
+  because the shell carried `CLAUDE_CODE_CHILD_SESSION` — Claude says so in the
+  session. Never assume a live session has a transcript.
 
 When something "stops working", check what Claude writes now before changing
 board code — `ls -lt ~/.claude/projects/*/`, `ls ~/.claude/sessions/`,
