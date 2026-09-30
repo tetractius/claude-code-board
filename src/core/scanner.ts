@@ -295,17 +295,20 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
     return { sessions: [], scannedAt, error: (err as Error).message }
   }
 
-  let entries: AgentEntry[]
+  /*
+   * Not fatal. Interactive sessions are discovered from live pids below and
+   * finished ones from transcripts, so a broken listing costs only background
+   * jobs - where an empty board costs everything, and Claude has changed this
+   * command's behaviour twice already.
+   */
+  let entries: AgentEntry[] = []
+  let error: string | undefined
   try {
     entries = await listAgents(bin.path)
   } catch (err) {
-    return {
-      sessions: [],
-      scannedAt,
-      claudeBin: bin.path,
-      claudeVersion: bin.version,
-      error: `\`claude agents --json --all\` failed: ${(err as Error).message}`,
-    }
+    error = `\`claude agents --json --all\` failed, so background jobs are missing: ${
+      (err as Error).message
+    }`
   }
 
   const [transcripts, history, procs, registry] = await Promise.all([
@@ -371,13 +374,8 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
       if (!TERMINAL_STATUS.has(s.status)) return true
       return ++dropped <= limit
     })
-    return {
-      sessions: kept,
-      scannedAt,
-      claudeBin: bin.path,
-      claudeVersion: bin.version,
-    }
+    return { sessions: kept, scannedAt, claudeBin: bin.path, claudeVersion: bin.version, error }
   }
 
-  return { sessions, scannedAt, claudeBin: bin.path, claudeVersion: bin.version }
+  return { sessions, scannedAt, claudeBin: bin.path, claudeVersion: bin.version, error }
 }

@@ -67,7 +67,15 @@ async function versionOf(path: string): Promise<string | null> {
 export async function resolveClaudeBin(override = ''): Promise<ClaudeBin> {
   if (cached && !override) return cached
 
-  // `which` first: it respects whatever PATH we actually inherited.
+  // An explicit choice wins outright, or the Settings field silently does
+  // nothing - and it is the only way out when detection picks the wrong one.
+  if (override) {
+    const version = await versionOf(override)
+    if (version) return (cached = { path: override, version, semver: parseVersion(version) })
+    throw new Error(`\`${override}\` is not a working claude binary.`)
+  }
+
+  // `which` next: it respects whatever PATH we actually inherited.
   try {
     const { stdout } = await run('/usr/bin/env', ['sh', '-lc', 'command -v claude'], {
       timeout: 15_000,

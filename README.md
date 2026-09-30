@@ -16,7 +16,8 @@ board release expects:
 
 | Board | Claude Code | Status reporting |
 | --- | --- | --- |
-| **0.1.4** | **2.1.285** (built and tested against) | as 0.1.3; no longer needs `lsof` on Linux |
+| **0.1.5** | **2.1.285** (built and tested against) | as 0.1.4, but survives `claude agents --json` breaking |
+| 0.1.4 | 2.1.285 | **empty board if `claude agents --json` ever fails** — one bad exit code and every session disappears |
 | 0.1.3 | 2.1.285 | finds sessions that have no transcript yet |
 | 0.1.2 | 2.1.284 | misses a session started as a bare `claude` until its transcript is written |
 | 0.1.1 | 2.1.284 | as 0.1.2, but its delete guard fails open — **do not use** |
@@ -28,6 +29,12 @@ those versions; 0.1.1 finds the sessions again but can only report whether one
 is running, not what it is doing — nothing publishes idle/busy/waiting any more.
 The exact release that dropped the registry is somewhere in 2.1.274–2.1.283,
 untested here.
+
+Up to 0.1.4 a failure of `claude agents --json --all` aborted the whole scan and
+returned nothing, so a single change to that command emptied the board even
+though live sessions are found from pids and finished ones from transcripts.
+From 0.1.5 it is best-effort: a failure costs only background jobs, and says so
+in a banner.
 
 A session may also have **no transcript at all**. The usual cause is transcript
 persistence being switched off, which Claude announces in the session itself:
