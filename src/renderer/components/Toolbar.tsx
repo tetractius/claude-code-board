@@ -55,7 +55,10 @@ export default function Toolbar(p: Props) {
               {p.counts[s]} {statusStyle(s).label}
             </span>
           ))}
-          {p.headlessCount > 0 && (
+          {/* Stays while the filter is on: deleting the last headless session
+              would otherwise unmount the only control that can turn it off,
+              leaving a board that is empty with no way back. */}
+          {(p.headlessCount > 0 || p.headlessOnly) && (
             <button
               onClick={() => p.onHeadlessOnly(!p.headlessOnly)}
               title="Sessions started by `claude -p` — scripts and cron jobs"
