@@ -30,6 +30,53 @@ const input =
   'w-full rounded border border-suture bg-slab px-2 py-1.5 font-mono text-[12px] text-bone ' +
   'placeholder:text-ash/60 focus:border-mortis focus:outline-none'
 
+/**
+ * Installing edits the user's own `~/.claude/settings.json`, so it is a button
+ * with the consequences spelled out, never something the board does by itself.
+ */
+function HooksSection() {
+  const [installed, setInstalled] = useState<boolean | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    void api.hooksInstalled().then(setInstalled, () => setInstalled(false))
+  }, [])
+
+  const run = async (action: () => Promise<void>) => {
+    setError('')
+    try {
+      await action()
+      setInstalled(await api.hooksInstalled())
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  return (
+    <div className="rounded border border-suture px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] text-bone">Status hooks</span>
+        {installed !== null && (
+          <button
+            onClick={() => void run(installed ? api.uninstallHooks : api.installHooks)}
+            className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
+                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10"
+          >
+            {installed ? 'Remove' : 'Install'}
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-[11px] text-ash">
+        Adds a hook to ~/.claude/settings.json that records each session's busy / waiting / idle
+        state in ~/.claude-board/hooks. More reliable than reading Claude's internal files, which
+        change between versions. Stores no prompt text. Running sessions pick it up from their
+        next message; a backup is kept as settings.json.board-backup.
+      </p>
+      {error && <p className="mt-1 text-[11px] text-artery">{error}</p>}
+    </div>
+  )
+}
+
 export default function SettingsModal({ config, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<BoardConfig>(config)
 
@@ -86,6 +133,24 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
               />
             </Field>
           </div>
+
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-verdigris"
+              checked={draft.notify}
+              onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
+            />
+            <span>
+              <span className="text-[12px] text-bone">Notify when a session needs you</span>
+              <span className="mt-0.5 block text-[11px] text-ash">
+                A desktop notification when a session starts waiting or becomes blocked. Click it
+                to jump to the session's terminal.
+              </span>
+            </span>
+          </label>
+
+          <HooksSection />
 
           {api.platform === 'linux' ? (
             <>

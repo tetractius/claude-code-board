@@ -9,9 +9,10 @@ import {
 import { readJobState, type JobState } from './jobs.ts'
 import { buildTranscriptIndex, readTranscriptMeta, pruneTranscriptCache } from './transcripts.ts'
 import { buildHistoryIndex } from './history.ts'
-import { buildProcIndex, isClaudeProcess, type ProcInfo } from './ps.ts'
+import { buildProcIndex, isClaudeProcess, isSuspended, type ProcInfo } from './ps.ts'
 import { resolveActivity } from './activity.ts'
 import { readTerminalTitles } from './terminal.ts'
+import { readHookStatus } from './hooks.ts'
 import { compareVersions, toMs } from './util.ts'
 import { TERMINAL_STATUS, NEEDS_ATTENTION } from './types.ts'
 import type { BoardSession, ScanResult, Status, Where } from './types.ts'
@@ -164,7 +165,16 @@ async function buildSession(
     transcriptMtime: meta?.mtimeMs,
   })
 
-  const status = deriveStatus(entry, live, attached)
+  /*
+   * The board's own hook, when installed, outranks everything above: it is
+   * event-driven where the rest is polled, and it is the one source that does
+   * not depend on Claude's private files. Background jobs keep their job
+   * state, which says more than a turn ending.
+   */
+  const hook = live && entry.kind !== 'background'
+    ? await readHookStatus(sessionId, meta?.lastMessageAt)
+    : null
+  const status = hook?.status ?? deriveStatus(entry, live, attached)
 
   // A running process keeps executing the build it started with, so an update
   // installed underneath it does nothing until it restarts. Only flag sessions
@@ -202,10 +212,12 @@ async function buildSession(
     // even when the attached terminal's live status is what the badge reports.
     jobState: entry.state,
     isolated: !!job?.bgIsolation && job.bgIsolation !== 'none',
-    waitingFor: entry.waitingFor ?? registry?.waitingFor ?? attached?.waitingFor,
+    waitingFor:
+      hook?.waitingFor ?? entry.waitingFor ?? registry?.waitingFor ?? attached?.waitingFor,
     live,
+    suspended: live && isSuspended(proc),
     startedAt: entry.startedAt ?? 0,
-    lastActivity: activity.at,
+    lastActivity: Math.max(activity.at, hook?.at ?? 0),
     lastActivitySource: activity.source,
     lastPrompt: meta?.lastPrompt,
     detail: job?.detail,
@@ -257,6 +269,7 @@ async function recoverFinished(
       isFork: false,
       status: 'exited',
       live: false,
+      suspended: false,
       startedAt: 0,
       lastActivity: activity.at,
       lastActivitySource: activity.source,

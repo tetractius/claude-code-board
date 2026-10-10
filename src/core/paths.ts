@@ -11,6 +11,8 @@ export const HISTORY_FILE = join(CLAUDE_DIR, 'history.jsonl')
 export const BOARD_DIR = join(HOME, '.claude-board')
 export const NOTES_FILE = join(BOARD_DIR, 'notes.json')
 export const CONFIG_FILE = join(BOARD_DIR, 'config.json')
+/** One `<sessionId>.json` per session, written by the board's Claude hook. */
+export const HOOKS_DIR = join(BOARD_DIR, 'hooks')
 
 /** Collapse a leading home directory to `~` for display. */
 export function tildify(p: string): string {
