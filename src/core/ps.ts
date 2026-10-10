@@ -12,6 +12,8 @@ export interface ProcInfo {
   comm: string
   /** Full command line, which carries `--resume <uuid>` when there is one. */
   args: string
+  /** `ps` state flags, e.g. `S+`; a leading `T` means stopped by a signal. */
+  stat: string
 }
 
 /**
@@ -22,7 +24,7 @@ export async function buildProcIndex(): Promise<Map<number, ProcInfo>> {
   const index = new Map<number, ProcInfo>()
   let stdout: string
   try {
-    ;({ stdout } = await run('ps', ['-Ao', 'pid=,ppid=,tty=,args='], {
+    ;({ stdout } = await run('ps', ['-Ao', 'pid=,ppid=,tty=,stat=,args='], {
       timeout: 15_000,
       maxBuffer: 8 * 1024 * 1024,
     }))
@@ -31,12 +33,19 @@ export async function buildProcIndex(): Promise<Map<number, ProcInfo>> {
   }
 
   for (const line of stdout.split('\n')) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line)
     if (!m) continue
     const pid = Number(m[1])
-    const args = m[4].trim()
+    const args = m[5].trim()
     // `comm` is just the argv[0] of `args`; one ps call cannot emit both.
-    index.set(pid, { pid, ppid: Number(m[2]), tty: m[3], comm: args.split(' ')[0], args })
+    index.set(pid, {
+      pid,
+      ppid: Number(m[2]),
+      tty: m[3],
+      stat: m[4],
+      comm: args.split(' ')[0],
+      args,
+    })
   }
   return index
 }
@@ -49,6 +58,24 @@ export async function buildProcIndex(): Promise<Map<number, ProcInfo>> {
  */
 export function isClaudeProcess(info: ProcInfo | undefined): boolean {
   return !!info && /(^|\/)claude(\.app)?($|\/|\s)/i.test(info.comm)
+}
+
+/**
+ * Stopped by job control - Ctrl+Z in the terminal, or SIGSTOP. The process is
+ * alive, so every other source still reports it as running, but it does
+ * nothing until someone runs `fg` in that terminal. Typically it is hidden
+ * behind whatever was started in the same tab afterwards.
+ */
+export function isSuspended(info: ProcInfo | undefined): boolean {
+  return !!info && info.stat.startsWith('T')
+}
+
+/**
+ * In the foreground process group of its terminal - the `+` in `ps` state.
+ * Of several processes on one tty, this is the one actually on screen.
+ */
+export function isForeground(info: ProcInfo | undefined): boolean {
+  return !!info && info.stat.includes('+')
 }
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/

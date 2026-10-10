@@ -181,6 +181,23 @@ function SessionCard({
           </Chip>
         )}
         {s.pid && <Chip title="Process id">pid {s.pid}</Chip>}
+        {/*
+          Stopped with Ctrl+Z. It still holds its tty, so it looks open, but it
+          does nothing until resumed - and is usually hidden behind whatever
+          was started in that tab afterwards.
+        */}
+        {s.suspended && (
+          <span
+            title={
+              `Suspended (Ctrl+Z) on ${s.where.label}. Run \`fg\` in that terminal to resume ` +
+              `it, or \`kill -CONT ${s.pid}; kill ${s.pid}\` to end it.`
+            }
+            className="rounded border border-bile/50 bg-bile/10 px-1.5 py-0.5 font-mono
+                       text-[10px] text-bile"
+          >
+            ⏸ suspended
+          </span>
+        )}
         {s.needsRestart && (
           <span
             title={`Running ${s.version}, but a newer Claude is installed. This session keeps the old build until you restart it.`}
@@ -240,8 +257,16 @@ function SessionCard({
         <div className="flex shrink-0 gap-2">
           <button
             onClick={() => onResume(s)}
+            disabled={!s.resumable}
+            title={
+              s.resumable
+                ? undefined
+                : 'Nothing saved to resume: this session never got a prompt, so Claude kept no conversation.'
+            }
             className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10"
+                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10
+                       disabled:cursor-not-allowed disabled:text-ash/50
+                       disabled:hover:border-suture disabled:hover:bg-slab"
           >
             Resume
           </button>
@@ -285,6 +310,8 @@ export default memo(SessionCard, (a, b) => {
     x.isFork === y.isFork &&
     x.children === y.children &&
     x.needsRestart === y.needsRestart &&
+    x.suspended === y.suspended &&
+    x.resumable === y.resumable &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&
     x.command === y.command
