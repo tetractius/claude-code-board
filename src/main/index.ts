@@ -17,6 +17,7 @@ import {
   snapshot,
   type StatusSnapshot,
 } from '../core/attention.ts'
+import { hooksInstalled, installHooks, uninstallHooks } from '../core/hooks.ts'
 import type { BoardConfig, BoardSession, ScanResult } from '../core/types.ts'
 import { CHANNELS } from './ipc.ts'
 import { watchClaudeState } from './watcher.ts'
@@ -140,6 +141,15 @@ function registerIpc(): void {
   ipcMain.handle(CHANNELS.bulkDeletePanel, (_e, sessions) => buildBulkDeletePanel(sessions))
   ipcMain.handle(CHANNELS.openTerminal, (_e, command: string) => openInTerminal(command))
   ipcMain.handle(CHANNELS.focusTty, (_e, tty: string) => focusTty(tty))
+  ipcMain.handle(CHANNELS.hooksStatus, () => hooksInstalled())
+  ipcMain.handle(CHANNELS.hooksInstall, async () => {
+    await installHooks()
+    void pushScan()
+  })
+  ipcMain.handle(CHANNELS.hooksUninstall, async () => {
+    await uninstallHooks()
+    void pushScan()
+  })
   ipcMain.handle(CHANNELS.openExternal, (_e, url: string) => {
     // Only ever hand http(s) links to the OS.
     if (!/^https?:\/\//i.test(url)) throw new Error('refusing to open a non-http url')

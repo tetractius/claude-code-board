@@ -40,6 +40,10 @@ const api = {
   focusTty: (tty: string): Promise<string> => ipcRenderer.invoke(CHANNELS.focusTty, tty),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CHANNELS.openExternal, url),
 
+  hooksInstalled: (): Promise<boolean> => ipcRenderer.invoke(CHANNELS.hooksStatus),
+  installHooks: (): Promise<void> => ipcRenderer.invoke(CHANNELS.hooksInstall),
+  uninstallHooks: (): Promise<void> => ipcRenderer.invoke(CHANNELS.hooksUninstall),
+
   platform: process.platform,
   /** So the renderer can collapse paths to `~` without touching node. */
   home: homedir(),
