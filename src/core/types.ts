@@ -84,6 +84,12 @@ export interface BoardSession {
    * and its tty, so without this it looks like any other open session.
    */
   suspended: boolean
+  /**
+   * Claude saved a conversation for it, so `claude --resume` can open it.
+   * A session that never got a prompt has none, and resuming it fails with
+   * "No conversation found".
+   */
+  resumable: boolean
   startedAt: number
   lastActivity: number
   lastActivitySource: ActivitySource

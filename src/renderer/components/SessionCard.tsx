@@ -257,8 +257,16 @@ function SessionCard({
         <div className="flex shrink-0 gap-2">
           <button
             onClick={() => onResume(s)}
+            disabled={!s.resumable}
+            title={
+              s.resumable
+                ? undefined
+                : 'Nothing saved to resume: this session never got a prompt, so Claude kept no conversation.'
+            }
             className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10"
+                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10
+                       disabled:cursor-not-allowed disabled:text-ash/50
+                       disabled:hover:border-suture disabled:hover:bg-slab"
           >
             Resume
           </button>
@@ -303,6 +311,7 @@ export default memo(SessionCard, (a, b) => {
     x.children === y.children &&
     x.needsRestart === y.needsRestart &&
     x.suspended === y.suspended &&
+    x.resumable === y.resumable &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&
     x.command === y.command

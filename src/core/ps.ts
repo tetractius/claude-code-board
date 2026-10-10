@@ -74,6 +74,14 @@ export function isSuspended(info: ProcInfo | undefined): boolean {
   return !!info && info.stat.startsWith('T')
 }
 
+/**
+ * In the foreground process group of its terminal - the `+` in `ps` state.
+ * Of several processes on one tty, this is the one actually on screen.
+ */
+export function isForeground(info: ProcInfo | undefined): boolean {
+  return !!info && info.stat.includes('+')
+}
+
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
 
 /**

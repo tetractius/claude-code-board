@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { slugifyCwd } from '../src/core/registry.ts'
 import { ttyOf } from '../src/core/scanner.ts'
 import { newlyNeedingAttention, snapshot } from '../src/core/attention.ts'
-import { isSuspended, type ProcInfo } from '../src/core/ps.ts'
+import { isForeground, isSuspended, type ProcInfo } from '../src/core/ps.ts'
 import type { BoardSession, Status } from '../src/core/types.ts'
 
 assert.equal(slugifyCwd('/Users/fil/git/claude-code-board'), '-Users-fil-git-claude-code-board')
@@ -45,5 +45,9 @@ assert.equal(isSuspended(proc('T+')), true)
 assert.equal(isSuspended(proc('S+')), false)
 assert.equal(isSuspended(proc('Ss')), false)
 assert.equal(isSuspended(undefined), false)
+// `+` marks the process on screen in its tab; a stopped one behind it lacks it.
+assert.equal(isForeground(proc('S+')), true)
+assert.equal(isForeground(proc('T')), false)
+assert.equal(isForeground(undefined), false)
 
 console.log('ok')
