@@ -46,12 +46,11 @@ const RESUME_CLASS =
   'disabled:text-ash/50 disabled:hover:border-suture disabled:hover:bg-slab'
 
 /**
- * Filled rather than outlined from 80%, so it cannot be mistaken for the
- * outlined amber "restart to update" chip that usually sits beside it.
+ * Filled red from 80%: time to /compact. Red and filled, so it cannot be
+ * mistaken for the outlined amber "restart to update" chip beside it.
  */
 function contextStyle(percent: number): string {
-  if (percent >= 90) return 'border-artery bg-artery/40 text-bone'
-  if (percent >= 80) return 'border-bile bg-bile/35 text-bone'
+  if (percent >= 80) return 'border-artery bg-artery/40 text-bone'
   return 'border-suture bg-slab text-ash'
 }
 
