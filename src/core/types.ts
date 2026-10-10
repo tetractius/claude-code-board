@@ -79,6 +79,13 @@ export interface BoardSession {
   command?: string
   waitingFor?: string
   live: boolean
+  /**
+   * Tokens in the context window as of the last reply: the prompt side of the
+   * last assistant message's usage, cache reads and writes included.
+   */
+  contextTokens?: number
+  /** `contextTokens` as a share of the configured window, 0-100. */
+  contextPercent?: number
   startedAt: number
   lastActivity: number
   lastActivitySource: ActivitySource
@@ -132,6 +139,11 @@ export interface BoardConfig {
    * shell command to run. Most emulators accept the default.
    */
   terminalArgs: string[]
+  /**
+   * Context window to measure usage against, in tokens. A session already past
+   * it is assumed to be on a 1M-token window.
+   */
+  contextWindow: number
 }
 
 export const DEFAULT_CONFIG: BoardConfig = {
@@ -140,6 +152,7 @@ export const DEFAULT_CONFIG: BoardConfig = {
   finishedLimit: 30,
   terminalExec: 'x-terminal-emulator',
   terminalArgs: ['-e', 'bash', '-lc', '{cmd}'],
+  contextWindow: 200_000,
 }
 
 /** Statuses that mean a human needs to do something. */

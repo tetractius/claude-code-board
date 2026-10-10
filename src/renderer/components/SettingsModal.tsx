@@ -87,6 +87,20 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
             </Field>
           </div>
 
+          <Field
+            label="Context window (tokens)"
+            hint="For the ctx % on each card. A session past it is measured against 1M."
+          >
+            <input
+              className={input}
+              type="number"
+              min={1000}
+              step={1000}
+              value={draft.contextWindow}
+              onChange={(e) => setDraft({ ...draft, contextWindow: Number(e.target.value) })}
+            />
+          </Field>
+
           {api.platform === 'linux' ? (
             <>
               <Field label="Terminal emulator" hint="Used by “Open in Terminal”.">

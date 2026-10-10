@@ -33,6 +33,15 @@ export function canFocusTty(s: BoardSession): boolean {
   return s.where.type === 'tty' && api.platform === 'darwin'
 }
 
+/**
+ * Filled red from 80%: time to /compact. Red and filled, so it cannot be
+ * mistaken for the outlined amber "restart to update" chip beside it.
+ */
+function contextStyle(percent: number): string {
+  if (percent >= 80) return 'border-artery bg-artery/40 text-bone'
+  return 'border-suture bg-slab text-ash'
+}
+
 function Chip({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
     <span
@@ -191,6 +200,19 @@ function SessionCard({
           </span>
         )}
         {s.tokens !== undefined && <Chip title="Tokens used">{formatTokens(s.tokens)} tok</Chip>}
+        {s.contextPercent !== undefined && !dead && (
+          <span
+            title={
+              `${formatTokens(s.contextTokens ?? 0)} tokens in context as of the last reply. ` +
+              'Past ~80%, /compact or a fresh session keeps it sharp.'
+            }
+            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${contextStyle(
+              s.contextPercent,
+            )}`}
+          >
+            ctx {s.contextPercent}%
+          </span>
+        )}
       </div>
 
       {focusError && <p className="text-[11px] text-artery">{focusError}</p>}
@@ -285,6 +307,7 @@ export default memo(SessionCard, (a, b) => {
     x.isFork === y.isFork &&
     x.children === y.children &&
     x.needsRestart === y.needsRestart &&
+    x.contextPercent === y.contextPercent &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&
     x.command === y.command

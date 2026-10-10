@@ -10,13 +10,13 @@ if (r.error) { console.error('ERROR:', r.error); process.exit(1) }
 const pad = (s: string, n: number) => s.padEnd(n).slice(0, n)
 console.log(
   pad('STATUS', 9), pad('WHERE', 11), pad('PID', 6), pad('KIND', 12),
-  pad('SRC', 8), pad('TITLE', 34), 'CWD',
+  pad('SRC', 8), pad('TITLE', 34), pad('CTX', 5), 'CWD',
 )
 for (const s of r.sessions) {
   console.log(
     pad(s.status, 9), pad(s.where.label, 11), pad(String(s.pid ?? '-'), 6),
     pad(s.kind + (s.isFork ? ' fork' : ''), 12), pad(s.lastActivitySource, 8),
-    pad(s.title, 34), tildify(s.cwd),
+    pad(s.title, 34), pad(s.contextPercent === undefined ? '-' : s.contextPercent + '%', 5), tildify(s.cwd),
   )
 }
 console.log(`\n${r.sessions.length} sessions`)

@@ -34,6 +34,8 @@ export interface TranscriptMeta {
   entrypoint?: string
   /** The slash command a session opened with, e.g. `/daily-standup`. */
   command?: string
+  /** Prompt-side tokens of the last main-thread reply: what the context holds. */
+  contextTokens?: number
 }
 
 const TAIL_BYTES = 512 * 1024
@@ -138,6 +140,36 @@ function lastMessageAt(blob: string): number | undefined {
 }
 
 /**
+ * Context size from the last assistant message's usage. Input, cache writes and
+ * cache reads together are everything the model was sent for that reply.
+ * Subagent turns and `<synthetic>` placeholders carry no real usage.
+ */
+function lastContextTokens(blob: string): number | undefined {
+  const marker = '"type":"assistant"'
+  let at = blob.lastIndexOf(marker)
+  while (at >= 0) {
+    const start = blob.lastIndexOf('\n', at) + 1
+    const end = blob.indexOf('\n', at)
+    const line = end === -1 ? blob.slice(start) : blob.slice(start, end)
+    try {
+      const rec = JSON.parse(line)
+      const u = rec.message?.usage
+      if (u && !rec.isSidechain && rec.message?.model !== '<synthetic>') {
+        const total =
+          (u.input_tokens ?? 0) +
+          (u.cache_creation_input_tokens ?? 0) +
+          (u.cache_read_input_tokens ?? 0)
+        if (total > 0) return total
+      }
+    } catch {
+      // A truncated first line in the tail window; keep walking backwards.
+    }
+    at = blob.lastIndexOf(marker, at - 1)
+  }
+  return undefined
+}
+
+/**
  * Pull `field` out of the first record in the blob that carries it.
  * Used on the head of a file, where the opening records are.
  */
@@ -212,6 +244,7 @@ export async function readTranscriptMeta(
   meta.aiTitle = lastRecord(tail, 'ai-title', 'aiTitle')
   meta.lastPrompt = lastRecord(tail, 'last-prompt', 'lastPrompt')
   meta.lastMessageAt = lastMessageAt(tail)
+  meta.contextTokens = lastContextTokens(tail)
 
   // Both title records are rewritten as a session runs, so the tail almost
   // always holds them - measured here, the last custom-title sits within 40KB
