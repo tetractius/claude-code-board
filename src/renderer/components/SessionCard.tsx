@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import StatusBadge from './StatusBadge.tsx'
+import StopButton from './StopButton.tsx'
 import NotesPanel from './NotesPanel.tsx'
 import { api } from '../lib/api.ts'
 import {
@@ -26,6 +27,7 @@ interface Props {
   onDelete: (s: BoardSession) => void
   onSelect: (key: string) => void
   onFocusTty: (s: BoardSession) => void
+  onStop: (key: string, pid: number, tty: string | null) => Promise<void>
 }
 
 /** Whether this session can be jumped to - macOS, and running in a terminal. */
@@ -56,9 +58,11 @@ function SessionCard({
   onDelete,
   onSelect,
   onFocusTty,
+  onStop,
 }: Props) {
   const dead = TERMINAL_STATUS.has(s.status)
   const canFocus = canFocusTty(s)
+  const stoppablePid = s.live && s.kind === 'interactive' ? s.pid : undefined
   const annotated = noteText.trim().length > 0
   const style = statusStyle(s.status)
 
@@ -255,21 +259,45 @@ function SessionCard({
           {shortId(s.sessionId)}… ⧉
         </button>
         <div className="flex shrink-0 gap-2">
-          <button
-            onClick={() => onResume(s)}
-            disabled={!s.resumable}
-            title={
-              s.resumable
-                ? undefined
-                : 'Nothing saved to resume: Claude kept no conversation for this session. Either it never got a prompt, or it ran with transcript saving off.'
-            }
-            className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10
-                       disabled:cursor-not-allowed disabled:text-ash/50
-                       disabled:hover:border-suture disabled:hover:bg-slab"
-          >
-            Resume
-          </button>
+          {/*
+            A running session already has a terminal: going to it is the useful
+            action, and resuming would start a second Claude on the same
+            conversation. Resume is for sessions with nothing open.
+          */}
+          {s.live && canFocus ? (
+            <button
+              onClick={() => onFocusTty(s)}
+              title={`Bring the ${s.where.label} window to the front`}
+              className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
+                         text-bone hover:border-verdigris/60 hover:bg-verdigris/10"
+            >
+              Open
+            </button>
+          ) : (
+            <button
+              onClick={() => onResume(s)}
+              disabled={!s.resumable}
+              title={
+                s.resumable
+                  ? undefined
+                  : 'Nothing saved to resume: Claude kept no conversation for this session. Either it never got a prompt, or it ran with transcript saving off.'
+              }
+              className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
+                         text-bone hover:border-verdigris/60 hover:bg-verdigris/10
+                         disabled:cursor-not-allowed disabled:text-ash/50
+                         disabled:hover:border-suture disabled:hover:bg-slab"
+            >
+              Resume
+            </button>
+          )}
+          {stoppablePid && (
+            <StopButton
+              suspended={s.suspended}
+              onStop={() =>
+                onStop(s.key, stoppablePid, s.where.type === 'tty' ? s.where.label : null)
+              }
+            />
+          )}
           <button
             onClick={() => onDelete(s)}
             className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
@@ -306,6 +334,8 @@ export default memo(SessionCard, (a, b) => {
     x.needs === y.needs &&
     x.tokens === y.tokens &&
     x.pid === y.pid &&
+    x.live === y.live &&
+    x.kind === y.kind &&
     x.where.label === y.where.label &&
     x.isFork === y.isFork &&
     x.children === y.children &&

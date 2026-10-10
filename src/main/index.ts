@@ -10,6 +10,7 @@ import {
   buildBulkDeletePanel,
 } from '../core/commands.ts'
 import { openInTerminal, focusTty } from '../core/terminal.ts'
+import { stopSession } from '../core/stop.ts'
 import { resetClaudeBin } from '../core/claudeCli.ts'
 import {
   attentionSummary,
@@ -174,6 +175,12 @@ function registerIpc(): void {
   ipcMain.handle(CHANNELS.hooksUninstall, async () => {
     await uninstallHooks()
     void pushScan()
+  })
+  ipcMain.handle(CHANNELS.stopSession, async (_e, pid: number, tty: string | null) => {
+    if (!Number.isInteger(pid) || pid <= 1) throw new Error(`not a pid: ${pid}`)
+    const stopped = await stopSession(pid, tty)
+    void pushScan()
+    return stopped
   })
   ipcMain.handle(CHANNELS.openExternal, (_e, url: string) => {
     // Only ever hand http(s) links to the OS.

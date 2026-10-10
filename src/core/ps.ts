@@ -60,6 +60,11 @@ export function isClaudeProcess(info: ProcInfo | undefined): boolean {
   return !!info && /(^|\/)claude(\.app)?($|\/|\s)/i.test(info.comm)
 }
 
+/** The terminal a process is attached to, or null when `ps` shows none. */
+export function terminalOf(info: ProcInfo | undefined): string | null {
+  return info && info.tty !== '??' && info.tty !== '-' ? info.tty : null
+}
+
 /**
  * Stopped by job control - Ctrl+Z in the terminal, or SIGSTOP. The process is
  * alive, so every other source still reports it as running, but it does

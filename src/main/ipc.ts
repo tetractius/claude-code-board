@@ -15,4 +15,5 @@ export const CHANNELS = {
   hooksStatus: 'board:hooks:status',
   hooksInstall: 'board:hooks:install',
   hooksUninstall: 'board:hooks:uninstall',
+  stopSession: 'board:stop-session',
 } as const
