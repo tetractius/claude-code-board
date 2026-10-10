@@ -27,6 +27,31 @@ export function newlyNeedingAttention(
   })
 }
 
+/** Statuses that mean the session is in the middle of a turn. */
+const RUNNING: ReadonlySet<Status> = new Set<Status>(['busy', 'working'])
+
+/**
+ * Sessions that finished a turn since the previous scan: busy or working
+ * before, and now idle or done. A turn that ends by asking for something is
+ * already announced by `newlyNeedingAttention`, so it is not counted twice.
+ */
+export function newlyFinished(
+  previous: StatusSnapshot | null,
+  sessions: BoardSession[],
+): BoardSession[] {
+  if (!previous) return []
+  return sessions.filter((s) => {
+    const before = previous.get(s.key)
+    return (
+      before !== undefined &&
+      RUNNING.has(before) &&
+      !RUNNING.has(s.status) &&
+      !NEEDS_ATTENTION.has(s.status) &&
+      s.status !== 'exited'
+    )
+  })
+}
+
 /** One line saying what the session wants, for the notification body. */
 export function attentionSummary(s: BoardSession): string {
   if (s.needs) return s.needs

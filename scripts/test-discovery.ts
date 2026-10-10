@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { slugifyCwd } from '../src/core/registry.ts'
 import { ttyOf } from '../src/core/scanner.ts'
-import { newlyNeedingAttention, snapshot } from '../src/core/attention.ts'
+import { newlyFinished, newlyNeedingAttention, snapshot } from '../src/core/attention.ts'
 import { isForeground, isSuspended, type ProcInfo } from '../src/core/ps.ts'
 import type { BoardSession, Status } from '../src/core/types.ts'
 
@@ -37,6 +37,13 @@ assert.deepEqual(keys(newlyNeedingAttention(snapshot(first), second)), ['a', 'c'
 assert.deepEqual(newlyNeedingAttention(snapshot(second), second), [])
 // waiting -> blocked is still the same need, not a new one.
 assert.deepEqual(newlyNeedingAttention(snapshot(second), [card('a', 'blocked')]), [])
+
+// Finished: busy -> idle once; busy -> waiting is a need, not a finish.
+const running = [card('a', 'busy'), card('b', 'busy'), card('c', 'working')]
+const after = [card('a', 'idle'), card('b', 'waiting'), card('c', 'done')]
+assert.deepEqual(keys(newlyFinished(snapshot(running), after)), ['a', 'c'])
+assert.deepEqual(newlyFinished(snapshot(after), after), [])
+assert.deepEqual(newlyFinished(null, after), [])
 
 // `ps` state: T is stopped (Ctrl+Z); S/R with any modifiers is not.
 const proc = (stat: string) => ({ stat }) as ProcInfo

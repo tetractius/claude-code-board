@@ -13,12 +13,13 @@ import { openInTerminal, focusTty } from '../core/terminal.ts'
 import { resetClaudeBin } from '../core/claudeCli.ts'
 import {
   attentionSummary,
+  newlyFinished,
   newlyNeedingAttention,
   snapshot,
   type StatusSnapshot,
 } from '../core/attention.ts'
 import { hooksInstalled, installHooks, uninstallHooks } from '../core/hooks.ts'
-import type { BoardConfig, BoardSession, ScanResult } from '../core/types.ts'
+import { NEEDS_ATTENTION, type BoardConfig, type BoardSession, type ScanResult } from '../core/types.ts'
 import { CHANNELS } from './ipc.ts'
 import { watchClaudeState } from './watcher.ts'
 
@@ -86,10 +87,10 @@ function showBoard(): void {
  * Clicking goes where the session is: its terminal when it has one, the board
  * otherwise - or when the terminal can no longer be found.
  */
-function notify(s: BoardSession): void {
+function notify(s: BoardSession, body: string): void {
   // Name and what happened, nothing else: the path and the prompt are on the
   // card, one click away.
-  const n = new Notification({ title: s.title, body: attentionSummary(s) })
+  const n = new Notification({ title: s.title, body })
   shown.add(n)
   n.on('close', () => shown.delete(n))
   n.on('click', () => {
@@ -107,11 +108,23 @@ async function notifyAttention(result: ScanResult): Promise<void> {
   // A failed scan returns no sessions; diffing against it would announce every
   // waiting session again once the next scan succeeds.
   if (result.sessions.length === 0 && result.error) return
-  const fresh = newlyNeedingAttention(lastStatuses, result.sessions)
+
+  // The Dock badge counts what is waiting on you right now, whatever the
+  // notification settings - it is the glance that replaces opening the board.
+  app.setBadgeCount(result.sessions.filter((s) => NEEDS_ATTENTION.has(s.status)).length)
+
+  const needing = newlyNeedingAttention(lastStatuses, result.sessions)
+  const finished = newlyFinished(lastStatuses, result.sessions)
   lastStatuses = snapshot(result.sessions)
-  if (fresh.length === 0 || !Notification.isSupported()) return
-  if (!(await loadConfig()).notify) return
-  for (const s of fresh) notify(s)
+  if (!Notification.isSupported()) return
+
+  const config = await loadConfig()
+  if (config.notify) for (const s of needing) notify(s, attentionSummary(s))
+  if (config.notifyDone) {
+    for (const s of finished) {
+      notify(s, 'Finished')
+    }
+  }
 }
 
 async function startPolling(): Promise<void> {

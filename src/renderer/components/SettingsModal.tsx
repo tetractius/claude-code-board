@@ -81,6 +81,33 @@ function HooksSection() {
   )
 }
 
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string
+  hint: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2">
+      <input
+        type="checkbox"
+        className="mt-0.5 accent-verdigris"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span>
+        <span className="text-[12px] text-bone">{label}</span>
+        <span className="mt-0.5 block text-[11px] text-ash">{hint}</span>
+      </span>
+    </label>
+  )
+}
+
 export default function SettingsModal({ config, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<BoardConfig>(config)
 
@@ -138,21 +165,18 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
             </Field>
           </div>
 
-          <label className="flex cursor-pointer items-start gap-2">
-            <input
-              type="checkbox"
-              className="mt-0.5 accent-verdigris"
-              checked={draft.notify}
-              onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
-            />
-            <span>
-              <span className="text-[12px] text-bone">Notify when a session needs you</span>
-              <span className="mt-0.5 block text-[11px] text-ash">
-                A desktop notification when a session starts waiting or becomes blocked. Click it
-                to jump to the session's terminal.
-              </span>
-            </span>
-          </label>
+          <Toggle
+            label="Notify when a session needs you"
+            hint="When a session starts waiting or becomes blocked. Click it to jump to the session's terminal."
+            checked={draft.notify}
+            onChange={(notify) => setDraft({ ...draft, notify })}
+          />
+          <Toggle
+            label="Notify when a session finishes"
+            hint="When a busy session ends its turn and goes idle."
+            checked={draft.notifyDone}
+            onChange={(notifyDone) => setDraft({ ...draft, notifyDone })}
+          />
 
           <HooksSection />
 
