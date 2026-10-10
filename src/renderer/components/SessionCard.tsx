@@ -222,6 +222,21 @@ function SessionCard({
           </span>
         )}
         {s.tokens !== undefined && <Chip title="Tokens used">{formatTokens(s.tokens)} tok</Chip>}
+        {s.contextPercent !== undefined && !dead && (
+          <span
+            title={
+              `${formatTokens(s.contextTokens ?? 0)} tokens in context as of the last reply. ` +
+              'Past ~80%, /compact or a fresh session keeps it sharp.'
+            }
+            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
+              s.contextPercent >= 80
+                ? 'border-bile/50 bg-bile/10 text-bile'
+                : 'border-suture bg-slab text-ash'
+            }`}
+          >
+            ctx {s.contextPercent}%
+          </span>
+        )}
       </div>
 
       {focusError && <p className="text-[11px] text-artery">{focusError}</p>}
@@ -362,6 +377,7 @@ export default memo(SessionCard, (a, b) => {
     x.needsRestart === y.needsRestart &&
     x.suspended === y.suspended &&
     x.resumable === y.resumable &&
+    x.contextPercent === y.contextPercent &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&
     x.command === y.command

@@ -91,6 +91,13 @@ export interface BoardSession {
    * off (see AGENTS.md), which exists on disk only as `projects/<slug>/<uuid>/`.
    */
   resumable: boolean
+  /**
+   * Tokens in the context window as of the last reply: the prompt side of the
+   * last assistant message's usage, cache reads and writes included.
+   */
+  contextTokens?: number
+  /** `contextTokens` as a share of the configured window, 0-100. */
+  contextPercent?: number
   startedAt: number
   lastActivity: number
   lastActivitySource: ActivitySource
@@ -148,6 +155,11 @@ export interface BoardConfig {
   notify: boolean
   /** Desktop notification when a busy session finishes its turn. */
   notifyDone: boolean
+  /**
+   * Context window to measure usage against, in tokens. A session already past
+   * it is assumed to be on a 1M-token window.
+   */
+  contextWindow: number
 }
 
 export const DEFAULT_CONFIG: BoardConfig = {
@@ -158,6 +170,7 @@ export const DEFAULT_CONFIG: BoardConfig = {
   terminalArgs: ['-e', 'bash', '-lc', '{cmd}'],
   notify: true,
   notifyDone: true,
+  contextWindow: 200_000,
 }
 
 /** Statuses that mean a human needs to do something. */

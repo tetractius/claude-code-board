@@ -55,7 +55,11 @@ const shown = new Set<Notification>()
 
 async function runScan(): Promise<ScanResult> {
   const config = await loadConfig()
-  return scan({ claudeBin: config.claudeBin, finishedLimit: config.finishedLimit })
+  return scan({
+    claudeBin: config.claudeBin,
+    finishedLimit: config.finishedLimit,
+    contextWindow: config.contextWindow,
+  })
 }
 
 async function pushScan(): Promise<void> {
