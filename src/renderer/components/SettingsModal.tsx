@@ -87,6 +87,32 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
             </Field>
           </div>
 
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              className="mt-0.5 accent-verdigris"
+              checked={draft.notify}
+              onChange={(e) => setDraft({ ...draft, notify: e.target.checked })}
+            />
+            <span>
+              <span className="text-[12px] text-bone">Notify when a session needs you</span>
+              <span className="mt-0.5 block text-[11px] text-ash">
+                A desktop notification when a session starts waiting or becomes blocked. Click it
+                to jump to the session's terminal.
+              </span>
+            </span>
+          </label>
+
+          <Field label="Dormant after (hours)" hint="An open session idle this long counts as dormant.">
+            <input
+              className={input}
+              type="number"
+              min={1}
+              value={draft.dormantHours}
+              onChange={(e) => setDraft({ ...draft, dormantHours: Number(e.target.value) })}
+            />
+          </Field>
+
           {api.platform === 'linux' ? (
             <>
               <Field label="Terminal emulator" hint="Used by “Open in Terminal”.">

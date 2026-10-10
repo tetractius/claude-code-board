@@ -79,6 +79,11 @@ export interface BoardSession {
   command?: string
   waitingFor?: string
   live: boolean
+  /**
+   * The process is stopped (Ctrl+Z) rather than running. It keeps its status
+   * and its tty, so without this it looks like any other open session.
+   */
+  suspended: boolean
   startedAt: number
   lastActivity: number
   lastActivitySource: ActivitySource
@@ -132,6 +137,10 @@ export interface BoardConfig {
    * shell command to run. Most emulators accept the default.
    */
   terminalArgs: string[]
+  /** Desktop notification when a session starts waiting or becomes blocked. */
+  notify: boolean
+  /** A live session idle for longer than this many hours counts as dormant. */
+  dormantHours: number
 }
 
 export const DEFAULT_CONFIG: BoardConfig = {
@@ -140,6 +149,8 @@ export const DEFAULT_CONFIG: BoardConfig = {
   finishedLimit: 30,
   terminalExec: 'x-terminal-emulator',
   terminalArgs: ['-e', 'bash', '-lc', '{cmd}'],
+  notify: true,
+  dormantHours: 24,
 }
 
 /** Statuses that mean a human needs to do something. */

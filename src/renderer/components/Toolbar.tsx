@@ -20,6 +20,9 @@ interface Props {
   headlessOnly: boolean
   onHeadlessOnly: (v: boolean) => void
   headlessCount: number
+  dormantOnly: boolean
+  onDormantOnly: (v: boolean) => void
+  dormantCount: number
   checkedCount: number
   onSelectAllShown: () => void
   onClearChecked: () => void
@@ -70,6 +73,18 @@ export default function Toolbar(p: Props) {
                           }`}
             >
               ⚡ {p.headlessCount} headless
+            </button>
+          )}
+          {(p.dormantCount > 0 || p.dormantOnly) && (
+            <button
+              onClick={() => p.onDormantOnly(!p.dormantOnly)}
+              title="Open but untouched for a while, or suspended - tabs left behind. Show only these, then select and delete."
+              className={`no-drag flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5
+                          transition-colors ${
+                            p.dormantOnly ? 'bg-mortis/40 text-bone' : 'text-ash hover:text-bone'
+                          }`}
+            >
+              💤 {p.dormantCount} dormant
             </button>
           )}
           {p.staleCount > 0 && (

@@ -16,6 +16,7 @@ import {
   type ScanResult,
   type Status,
 } from '../core/types.ts'
+import { isDormant } from '../core/attention.ts'
 
 interface Command {
   kind: ModalKind
@@ -41,6 +42,7 @@ export default function App() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [checkedKeys, setCheckedKeys] = useState<ReadonlySet<string>>(() => new Set())
   const [headlessOnly, setHeadlessOnly] = useState(false)
+  const [dormantOnly, setDormantOnly] = useState(false)
   const [focusError, setFocusError] = useState<{ key: string; message: string } | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
@@ -160,6 +162,7 @@ export default function App() {
     const needle = query.trim().toLowerCase()
     const filtered = scan.sessions.filter((s) => {
       if (headlessOnly && !s.headless) return false
+      if (dormantOnly && !isDormant(s, config.dormantHours)) return false
       if (!showFinished && TERMINAL_STATUS.has(s.status)) return false
       if (project !== 'all' && projectName(s.cwd) !== project) return false
       if (!needle) return true
@@ -181,11 +184,26 @@ export default function App() {
       )
     }
     return filtered
-  }, [scan.sessions, query, project, showFinished, headlessOnly, sort, notes])
+  }, [
+    scan.sessions,
+    query,
+    project,
+    showFinished,
+    headlessOnly,
+    dormantOnly,
+    config.dormantHours,
+    sort,
+    notes,
+  ])
 
   const headlessCount = useMemo(
     () => scan.sessions.filter((s) => s.headless).length,
     [scan.sessions],
+  )
+
+  const dormantCount = useMemo(
+    () => scan.sessions.filter((s) => isDormant(s, config.dormantHours)).length,
+    [scan.sessions, config.dormantHours],
   )
 
   const staleCount = useMemo(
@@ -355,6 +373,9 @@ export default function App() {
         headlessOnly={headlessOnly}
         onHeadlessOnly={setHeadlessOnly}
         headlessCount={headlessCount}
+        dormantOnly={dormantOnly}
+        onDormantOnly={setDormantOnly}
+        dormantCount={dormantCount}
         checkedCount={checkedKeys.size}
         onSelectAllShown={onSelectAllShown}
         onClearChecked={onClearChecked}
