@@ -69,8 +69,8 @@ function HooksSection() {
       <p className="mt-1 text-[11px] text-ash">
         Adds a hook to ~/.claude/settings.json that records each session's busy / waiting / idle
         state in ~/.claude-board/hooks. More reliable than reading Claude's internal files, which
-        change between versions. Stores no prompt text. Applies to sessions started after
-        installing; a backup is kept as settings.json.board-backup.
+        change between versions. Stores no prompt text. Running sessions pick it up from their
+        next message; a backup is kept as settings.json.board-backup.
       </p>
       {error && <p className="mt-1 text-[11px] text-artery">{error}</p>}
     </div>
