@@ -1,4 +1,4 @@
-import { NEEDS_ATTENTION, type BoardSession, type Status } from './types.ts'
+import { NEEDS_ATTENTION, TERMINAL_STATUS, type BoardSession, type Status } from './types.ts'
 
 /** Each session's status at the previous scan, keyed on `BoardSession.key`. */
 export type StatusSnapshot = Map<string, Status>
@@ -81,6 +81,18 @@ export function settleFinished(
     }
   }
   return ready
+}
+
+/**
+ * Still open, but nobody has touched it for `hours`: a terminal tab left
+ * behind. Anything suspended counts straight away, since it does nothing until
+ * someone finds its tab. Sessions mid-turn or waiting on you never do.
+ */
+export function isDormant(s: BoardSession, hours: number, now = Date.now()): boolean {
+  if (!s.live || TERMINAL_STATUS.has(s.status) || NEEDS_ATTENTION.has(s.status)) return false
+  if (s.suspended) return true
+  if (s.status === 'busy' || s.status === 'working') return false
+  return now - s.lastActivity > hours * 3_600_000
 }
 
 /** One line saying what the session wants, for the notification body. */

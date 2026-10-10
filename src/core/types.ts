@@ -160,6 +160,8 @@ export interface BoardConfig {
    * it is assumed to be on a 1M-token window.
    */
   contextWindow: number
+  /** A live session idle for longer than this many hours counts as dormant. */
+  dormantHours: number
 }
 
 export const DEFAULT_CONFIG: BoardConfig = {
@@ -171,6 +173,7 @@ export const DEFAULT_CONFIG: BoardConfig = {
   notify: true,
   notifyDone: true,
   contextWindow: 200_000,
+  dormantHours: 24,
 }
 
 /** Statuses that mean a human needs to do something. */

@@ -194,6 +194,16 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
             />
           </Field>
 
+          <Field label="Dormant after (hours)" hint="An open session idle this long counts as dormant.">
+            <input
+              className={input}
+              type="number"
+              min={1}
+              value={draft.dormantHours}
+              onChange={(e) => setDraft({ ...draft, dormantHours: Number(e.target.value) })}
+            />
+          </Field>
+
           {api.platform === 'linux' ? (
             <>
               <Field label="Terminal emulator" hint="Used by “Open in Terminal”.">

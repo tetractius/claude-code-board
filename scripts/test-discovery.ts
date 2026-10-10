@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { slugifyCwd } from '../src/core/registry.ts'
 import { ttyOf } from '../src/core/scanner.ts'
 import {
+  isDormant,
   newlyFinished,
   newlyNeedingAttention,
   settleFinished,
@@ -68,6 +69,16 @@ assert.deepEqual(settleFinished(pending, [], [card('a', 'busy')], 4_000), [])
 assert.deepEqual(settleFinished(pending, [card('a', 'idle')], [card('a', 'idle')], 6_000), [])
 assert.deepEqual(keys(settleFinished(pending, [], [card('a', 'idle')], 16_000)), ['a'])
 assert.deepEqual(settleFinished(pending, [], [card('a', 'idle')], 30_000), [])
+
+// Dormant: live and untouched past the threshold, or suspended at any age.
+const now = Date.now()
+const session = (over: Partial<BoardSession>) =>
+  ({ live: true, status: 'idle', suspended: false, lastActivity: now, ...over }) as BoardSession
+assert.equal(isDormant(session({ lastActivity: now - 25 * 3_600_000 }), 24, now), true)
+assert.equal(isDormant(session({ lastActivity: now - 1 * 3_600_000 }), 24, now), false)
+assert.equal(isDormant(session({ suspended: true }), 24, now), true)
+assert.equal(isDormant(session({ status: 'waiting', lastActivity: 0 }), 24, now), false)
+assert.equal(isDormant(session({ live: false, status: 'exited', lastActivity: 0 }), 24, now), false)
 
 // `ps` state: T is stopped (Ctrl+Z); S/R with any modifiers is not.
 const proc = (stat: string) => ({ stat }) as ProcInfo
