@@ -84,6 +84,13 @@ export interface BoardSession {
    * and its tty, so without this it looks like any other open session.
    */
   suspended: boolean
+  /**
+   * Tokens in the context window as of the last reply: the prompt side of the
+   * last assistant message's usage, cache reads and writes included.
+   */
+  contextTokens?: number
+  /** `contextTokens` as a share of the configured window, 0-100. */
+  contextPercent?: number
   startedAt: number
   lastActivity: number
   lastActivitySource: ActivitySource
@@ -139,6 +146,15 @@ export interface BoardConfig {
   terminalArgs: string[]
   /** Desktop notification when a session starts waiting or becomes blocked. */
   notify: boolean
+  /** Desktop notification when a busy session finishes its turn. */
+  notifyDone: boolean
+  /**
+   * Context window to measure usage against, in tokens. A session already past
+   * it is assumed to be on a 1M-token window.
+   */
+  contextWindow: number
+  /** A live session idle for longer than this many hours counts as dormant. */
+  dormantHours: number
 }
 
 export const DEFAULT_CONFIG: BoardConfig = {
@@ -148,6 +164,9 @@ export const DEFAULT_CONFIG: BoardConfig = {
   terminalExec: 'x-terminal-emulator',
   terminalArgs: ['-e', 'bash', '-lc', '{cmd}'],
   notify: true,
+  notifyDone: true,
+  contextWindow: 200_000,
+  dormantHours: 24,
 }
 
 /** Statuses that mean a human needs to do something. */

@@ -1,5 +1,5 @@
-import { watch, type FSWatcher } from 'node:fs'
-import { JOBS_DIR, REGISTRY_DIR } from '../core/paths.ts'
+import { mkdirSync, watch, type FSWatcher } from 'node:fs'
+import { HOOKS_DIR, JOBS_DIR, REGISTRY_DIR } from '../core/paths.ts'
 
 /**
  * Watch the two directories Claude writes to on every state change:
@@ -20,7 +20,15 @@ export function watchClaudeState(onChange: () => void, debounceMs = 300): () => 
     }, debounceMs)
   }
 
-  for (const dir of [REGISTRY_DIR, JOBS_DIR]) {
+  // The hooks directory is ours, so create it rather than miss the first event
+  // written after the hooks are installed.
+  try {
+    mkdirSync(HOOKS_DIR, { recursive: true })
+  } catch {
+    // Watching it below will just fail and warn.
+  }
+
+  for (const dir of [REGISTRY_DIR, JOBS_DIR, HOOKS_DIR]) {
     try {
       watchers.push(watch(dir, { recursive: true }, fire))
     } catch (err) {

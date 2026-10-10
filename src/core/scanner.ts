@@ -12,8 +12,9 @@ import { buildHistoryIndex } from './history.ts'
 import { buildProcIndex, isClaudeProcess, isSuspended, type ProcInfo } from './ps.ts'
 import { resolveActivity } from './activity.ts'
 import { readTerminalTitles } from './terminal.ts'
+import { readHookStatus } from './hooks.ts'
 import { compareVersions, toMs } from './util.ts'
-import { TERMINAL_STATUS, NEEDS_ATTENTION } from './types.ts'
+import { TERMINAL_STATUS, NEEDS_ATTENTION, DEFAULT_CONFIG } from './types.ts'
 import type { BoardSession, ScanResult, Status, Where } from './types.ts'
 
 /** The CLI appends this to a session's name to mark it as forked. */
@@ -104,6 +105,7 @@ async function buildSession(
     ttyTitles: Map<string, string>
     /** Version of the installed binary, for the restart-needed check. */
     installed: string
+    contextWindow: number
   },
 ): Promise<BoardSession> {
   const sessionId = entry.sessionId ?? ''
@@ -164,7 +166,16 @@ async function buildSession(
     transcriptMtime: meta?.mtimeMs,
   })
 
-  const status = deriveStatus(entry, live, attached)
+  /*
+   * The board's own hook, when installed, outranks everything above: it is
+   * event-driven where the rest is polled, and it is the one source that does
+   * not depend on Claude's private files. Background jobs keep their job
+   * state, which says more than a turn ending.
+   */
+  const hook = live && entry.kind !== 'background'
+    ? await readHookStatus(sessionId, meta?.lastMessageAt)
+    : null
+  const status = hook?.status ?? deriveStatus(entry, live, attached)
 
   // A running process keeps executing the build it started with, so an update
   // installed underneath it does nothing until it restarts. Only flag sessions
@@ -202,11 +213,13 @@ async function buildSession(
     // even when the attached terminal's live status is what the badge reports.
     jobState: entry.state,
     isolated: !!job?.bgIsolation && job.bgIsolation !== 'none',
-    waitingFor: entry.waitingFor ?? registry?.waitingFor ?? attached?.waitingFor,
+    waitingFor:
+      hook?.waitingFor ?? entry.waitingFor ?? registry?.waitingFor ?? attached?.waitingFor,
     live,
     suspended: live && isSuspended(proc),
+    ...contextUsage(meta?.contextTokens, ctx.contextWindow),
     startedAt: entry.startedAt ?? 0,
-    lastActivity: activity.at,
+    lastActivity: Math.max(activity.at, hook?.at ?? 0),
     lastActivitySource: activity.source,
     lastPrompt: meta?.lastPrompt,
     detail: job?.detail,
@@ -231,6 +244,7 @@ async function recoverFinished(
   transcripts: Map<string, string>,
   seen: Set<string>,
   history: Map<string, number>,
+  contextWindow: number,
 ): Promise<BoardSession[]> {
   const out: BoardSession[] = []
   for (const [sessionId, path] of transcripts) {
@@ -259,6 +273,7 @@ async function recoverFinished(
       status: 'exited',
       live: false,
       suspended: false,
+      ...contextUsage(meta.contextTokens, contextWindow),
       startedAt: 0,
       lastActivity: activity.at,
       lastActivitySource: activity.source,
@@ -268,6 +283,19 @@ async function recoverFinished(
     })
   }
   return out
+}
+
+/**
+ * A session already past the configured window cannot be on it, so it must be
+ * on the 1M-token one rather than at 140%.
+ */
+function contextUsage(
+  tokens: number | undefined,
+  window: number,
+): Pick<BoardSession, 'contextTokens' | 'contextPercent'> {
+  if (!tokens || window <= 0) return {}
+  const size = tokens > window ? Math.max(window, 1_000_000) : window
+  return { contextTokens: tokens, contextPercent: Math.min(100, Math.round((tokens / size) * 100)) }
 }
 
 /**
@@ -284,6 +312,8 @@ export interface ScanOptions {
   claudeBin?: string
   /** Max finished sessions to return; 0 means no limit. */
   finishedLimit?: number
+  /** Context window in tokens, for `contextPercent`. */
+  contextWindow?: number
 }
 
 /** The single entry point. Safe to call from Electron's main process or a server. */
@@ -320,6 +350,7 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
     readAllRegistry(),
   ])
   const ttyTitles = await readTerminalTitles()
+  const contextWindow = opts.contextWindow ?? DEFAULT_CONFIG.contextWindow
 
   // Only registry entries backed by a live claude process count; the directory
   // accumulates records for pids that exited long ago.
@@ -349,7 +380,15 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
 
   const sessions = await Promise.all(
     entries.map((entry) =>
-      buildSession(entry, { transcripts, history, procs, parked, ttyTitles, installed: bin.semver }),
+      buildSession(entry, {
+        transcripts,
+        history,
+        procs,
+        parked,
+        ttyTitles,
+        installed: bin.semver,
+        contextWindow,
+      }),
     ),
   )
 
@@ -363,7 +402,7 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
     ...sessions.map((s) => s.sessionId).filter(Boolean),
     ...liveSessionIds,
   ])
-  sessions.push(...(await recoverFinished(transcripts, seen, history)))
+  sessions.push(...(await recoverFinished(transcripts, seen, history, contextWindow)))
 
   sessions.sort((a, b) => rank(a) - rank(b) || b.lastActivity - a.lastActivity)
 

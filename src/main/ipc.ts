@@ -12,4 +12,7 @@ export const CHANNELS = {
   openTerminal: 'board:open-terminal',
   focusTty: 'board:focus-tty',
   openExternal: 'board:open-external',
+  hooksStatus: 'board:hooks:status',
+  hooksInstall: 'board:hooks:install',
+  hooksUninstall: 'board:hooks:uninstall',
 } as const

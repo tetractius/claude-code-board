@@ -2,7 +2,7 @@
 // lossy on purpose - `/` and `_` both collapse to `-` - so it is worth pinning.
 import assert from 'node:assert/strict'
 import { slugifyCwd } from '../src/core/registry.ts'
-import { newlyNeedingAttention, snapshot } from '../src/core/attention.ts'
+import { isDormant, newlyFinished, newlyNeedingAttention, snapshot } from '../src/core/attention.ts'
 import { isSuspended, type ProcInfo } from '../src/core/ps.ts'
 import type { BoardSession, Status } from '../src/core/types.ts'
 
@@ -25,6 +25,23 @@ assert.deepEqual(keys(newlyNeedingAttention(snapshot(first), second)), ['a', 'c'
 assert.deepEqual(newlyNeedingAttention(snapshot(second), second), [])
 // waiting -> blocked is still the same need, not a new one.
 assert.deepEqual(newlyNeedingAttention(snapshot(second), [card('a', 'blocked')]), [])
+
+// Finished: busy -> idle once; busy -> waiting is a need, not a finish.
+const running = [card('a', 'busy'), card('b', 'busy'), card('c', 'working')]
+const after = [card('a', 'idle'), card('b', 'waiting'), card('c', 'done')]
+assert.deepEqual(keys(newlyFinished(snapshot(running), after)), ['a', 'c'])
+assert.deepEqual(newlyFinished(snapshot(after), after), [])
+assert.deepEqual(newlyFinished(null, after), [])
+
+// Dormant: live and untouched past the threshold, or suspended at any age.
+const now = Date.now()
+const session = (over: Partial<BoardSession>) =>
+  ({ live: true, status: 'idle', suspended: false, lastActivity: now, ...over }) as BoardSession
+assert.equal(isDormant(session({ lastActivity: now - 25 * 3_600_000 }), 24, now), true)
+assert.equal(isDormant(session({ lastActivity: now - 1 * 3_600_000 }), 24, now), false)
+assert.equal(isDormant(session({ suspended: true }), 24, now), true)
+assert.equal(isDormant(session({ status: 'waiting', lastActivity: 0 }), 24, now), false)
+assert.equal(isDormant(session({ live: false, status: 'exited', lastActivity: 0 }), 24, now), false)
 
 // `ps` state: T is stopped (Ctrl+Z); S/R with any modifiers is not.
 const proc = (stat: string) => ({ stat }) as ProcInfo
