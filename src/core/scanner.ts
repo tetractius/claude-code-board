@@ -9,7 +9,7 @@ import {
 import { readJobState, type JobState } from './jobs.ts'
 import { buildTranscriptIndex, readTranscriptMeta, pruneTranscriptCache } from './transcripts.ts'
 import { buildHistoryIndex } from './history.ts'
-import { buildProcIndex, isClaudeProcess, type ProcInfo } from './ps.ts'
+import { buildProcIndex, isClaudeProcess, isSuspended, type ProcInfo } from './ps.ts'
 import { resolveActivity } from './activity.ts'
 import { readTerminalTitles } from './terminal.ts'
 import { compareVersions, toMs } from './util.ts'
@@ -208,6 +208,7 @@ async function buildSession(
     isolated: !!job?.bgIsolation && job.bgIsolation !== 'none',
     waitingFor: entry.waitingFor ?? registry?.waitingFor ?? attached?.waitingFor,
     live,
+    suspended: live && isSuspended(proc),
     startedAt: entry.startedAt ?? 0,
     lastActivity: activity.at,
     lastActivitySource: activity.source,
@@ -261,6 +262,7 @@ async function recoverFinished(
       isFork: false,
       status: 'exited',
       live: false,
+      suspended: false,
       startedAt: 0,
       lastActivity: activity.at,
       lastActivitySource: activity.source,

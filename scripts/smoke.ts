@@ -14,7 +14,7 @@ console.log(
 )
 for (const s of r.sessions) {
   console.log(
-    pad(s.status, 9), pad(s.where.label, 11), pad(String(s.pid ?? '-'), 6),
+    pad(s.status + (s.suspended ? ' ⏸' : ''), 9), pad(s.where.label, 11), pad(String(s.pid ?? '-'), 6),
     pad(s.kind + (s.isFork ? ' fork' : ''), 12), pad(s.lastActivitySource, 8),
     pad(s.title, 34), tildify(s.cwd),
   )

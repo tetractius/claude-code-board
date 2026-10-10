@@ -181,6 +181,23 @@ function SessionCard({
           </Chip>
         )}
         {s.pid && <Chip title="Process id">pid {s.pid}</Chip>}
+        {/*
+          Stopped with Ctrl+Z. It still holds its tty, so it looks open, but it
+          does nothing until resumed - and is usually hidden behind whatever
+          was started in that tab afterwards.
+        */}
+        {s.suspended && (
+          <span
+            title={
+              `Suspended (Ctrl+Z) on ${s.where.label}. Run \`fg\` in that terminal to resume ` +
+              `it, or \`kill -CONT ${s.pid}; kill ${s.pid}\` to end it.`
+            }
+            className="rounded border border-bile/50 bg-bile/10 px-1.5 py-0.5 font-mono
+                       text-[10px] text-bile"
+          >
+            ⏸ suspended
+          </span>
+        )}
         {s.needsRestart && (
           <span
             title={`Running ${s.version}, but a newer Claude is installed. This session keeps the old build until you restart it.`}
@@ -285,6 +302,7 @@ export default memo(SessionCard, (a, b) => {
     x.isFork === y.isFork &&
     x.children === y.children &&
     x.needsRestart === y.needsRestart &&
+    x.suspended === y.suspended &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&
     x.command === y.command
