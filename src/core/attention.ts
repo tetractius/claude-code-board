@@ -52,6 +52,37 @@ export function newlyFinished(
   })
 }
 
+/** Finished sessions not yet announced, keyed on `BoardSession.key`, with when they went idle. */
+export type PendingFinishes = Map<string, number>
+
+/**
+ * Claude reports a session idle for a moment between the steps of one long
+ * turn, so announcing every busy -> idle would say "Finished" several times
+ * for a single answer. A finish is held until the session has stayed quiet
+ * for `quietMs`; going busy again in the meantime cancels it.
+ */
+export function settleFinished(
+  pending: PendingFinishes,
+  finishedNow: BoardSession[],
+  sessions: BoardSession[],
+  now: number,
+  quietMs = 10_000,
+): BoardSession[] {
+  for (const s of finishedNow) if (!pending.has(s.key)) pending.set(s.key, now)
+  const byKey = new Map(sessions.map((s) => [s.key, s]))
+  const ready: BoardSession[] = []
+  for (const [key, at] of pending) {
+    const s = byKey.get(key)
+    if (!s || RUNNING.has(s.status) || NEEDS_ATTENTION.has(s.status)) {
+      pending.delete(key)
+    } else if (now - at >= quietMs) {
+      pending.delete(key)
+      ready.push(s)
+    }
+  }
+  return ready
+}
+
 /** One line saying what the session wants, for the notification body. */
 export function attentionSummary(s: BoardSession): string {
   if (s.needs) return s.needs

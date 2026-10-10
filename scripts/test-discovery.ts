@@ -3,7 +3,12 @@
 import assert from 'node:assert/strict'
 import { slugifyCwd } from '../src/core/registry.ts'
 import { ttyOf } from '../src/core/scanner.ts'
-import { newlyFinished, newlyNeedingAttention, snapshot } from '../src/core/attention.ts'
+import {
+  newlyFinished,
+  newlyNeedingAttention,
+  settleFinished,
+  snapshot,
+} from '../src/core/attention.ts'
 import { isForeground, isSuspended, type ProcInfo } from '../src/core/ps.ts'
 import type { BoardSession, Status } from '../src/core/types.ts'
 
@@ -44,6 +49,14 @@ const after = [card('a', 'idle'), card('b', 'waiting'), card('c', 'done')]
 assert.deepEqual(keys(newlyFinished(snapshot(running), after)), ['a', 'c'])
 assert.deepEqual(newlyFinished(snapshot(after), after), [])
 assert.deepEqual(newlyFinished(null, after), [])
+
+// A finish is announced only after 10s of quiet; a blip back to busy cancels it.
+const pending = new Map<string, number>()
+assert.deepEqual(settleFinished(pending, [card('a', 'idle')], [card('a', 'idle')], 0), [])
+assert.deepEqual(settleFinished(pending, [], [card('a', 'busy')], 4_000), [])
+assert.deepEqual(settleFinished(pending, [card('a', 'idle')], [card('a', 'idle')], 6_000), [])
+assert.deepEqual(keys(settleFinished(pending, [], [card('a', 'idle')], 16_000)), ['a'])
+assert.deepEqual(settleFinished(pending, [], [card('a', 'idle')], 30_000), [])
 
 // `ps` state: T is stopped (Ctrl+Z); S/R with any modifiers is not.
 const proc = (stat: string) => ({ stat }) as ProcInfo

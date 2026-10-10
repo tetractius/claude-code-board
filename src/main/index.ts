@@ -14,6 +14,8 @@ import { resetClaudeBin } from '../core/claudeCli.ts'
 import {
   attentionSummary,
   newlyFinished,
+  settleFinished,
+  type PendingFinishes,
   newlyNeedingAttention,
   snapshot,
   type StatusSnapshot,
@@ -45,6 +47,8 @@ let scanning = false
 let rescanQueued = false
 /** Statuses at the last pushed scan, to notify on transitions only. */
 let lastStatuses: StatusSnapshot | null = null
+/** Finished sessions held until they have stayed idle; see `settleFinished`. */
+const pendingFinishes: PendingFinishes = new Map()
 /** Held until dismissed: a garbage-collected Notification drops its click handler. */
 const shown = new Set<Notification>()
 
@@ -114,7 +118,12 @@ async function notifyAttention(result: ScanResult): Promise<void> {
   app.setBadgeCount(result.sessions.filter((s) => NEEDS_ATTENTION.has(s.status)).length)
 
   const needing = newlyNeedingAttention(lastStatuses, result.sessions)
-  const finished = newlyFinished(lastStatuses, result.sessions)
+  const finished = settleFinished(
+    pendingFinishes,
+    newlyFinished(lastStatuses, result.sessions),
+    result.sessions,
+    Date.now(),
+  )
   lastStatuses = snapshot(result.sessions)
   if (!Notification.isSupported()) return
 
