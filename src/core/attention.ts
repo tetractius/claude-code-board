@@ -29,5 +29,8 @@ export function newlyNeedingAttention(
 
 /** One line saying what the session wants, for the notification body. */
 export function attentionSummary(s: BoardSession): string {
-  return s.needs || s.waitingFor || (s.status === 'blocked' ? 'Blocked' : 'Waiting for you')
+  if (s.needs) return s.needs
+  if (s.waitingFor === 'permission') return 'Needs your permission'
+  if (s.waitingFor) return `Waiting for ${s.waitingFor}`
+  return s.status === 'blocked' ? 'Blocked' : 'Waiting for you'
 }

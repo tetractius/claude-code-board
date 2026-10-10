@@ -17,7 +17,6 @@ import {
   snapshot,
   type StatusSnapshot,
 } from '../core/attention.ts'
-import { tildify } from '../core/paths.ts'
 import type { BoardConfig, BoardSession, ScanResult } from '../core/types.ts'
 import { CHANNELS } from './ipc.ts'
 import { watchClaudeState } from './watcher.ts'
@@ -87,11 +86,9 @@ function showBoard(): void {
  * otherwise - or when the terminal can no longer be found.
  */
 function notify(s: BoardSession): void {
-  const n = new Notification({
-    title: s.title,
-    subtitle: tildify(s.cwd),
-    body: attentionSummary(s),
-  })
+  // Name and what happened, nothing else: the path and the prompt are on the
+  // card, one click away.
+  const n = new Notification({ title: s.title, body: attentionSummary(s) })
   shown.add(n)
   n.on('close', () => shown.delete(n))
   n.on('click', () => {
