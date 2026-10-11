@@ -9,7 +9,14 @@ import {
 import { readJobState, type JobState } from './jobs.ts'
 import { buildTranscriptIndex, readTranscriptMeta, pruneTranscriptCache } from './transcripts.ts'
 import { buildHistoryIndex } from './history.ts'
-import { buildProcIndex, isClaudeProcess, type ProcInfo } from './ps.ts'
+import {
+  buildProcIndex,
+  isClaudeProcess,
+  isForeground,
+  isSuspended,
+  terminalOf,
+  type ProcInfo,
+} from './ps.ts'
 import { resolveActivity } from './activity.ts'
 import { readTerminalTitles } from './terminal.ts'
 import { compareVersions, toMs } from './util.ts'
@@ -50,9 +57,7 @@ function deriveStatus(entry: AgentEntry, live: boolean, attached: RegistryEntry 
 }
 
 function ttyOf(proc: ProcInfo | undefined): string | null {
-  if (!proc || !isClaudeProcess(proc)) return null
-  const { tty } = proc
-  return tty && tty !== '??' && tty !== '-' ? tty : null
+  return isClaudeProcess(proc) ? terminalOf(proc) : null
 }
 
 /**
@@ -130,7 +135,13 @@ async function buildSession(
   // Since 2.1.28x a freshly started session has no transcript, so a /rename
   // exists nowhere on disk. Claude does keep the terminal title in step with
   // it, which is the only live source left.
-  const ttyTitle = where.type === 'tty' ? ctx.ttyTitles.get(where.label) : undefined
+  //
+  // The title belongs to whatever is on screen in that tab. A session hidden
+  // behind another one - suspended with Ctrl+Z, say - would otherwise take
+  // its neighbour's name.
+  const onScreen = ttyOf(proc) ? proc : attachedProc
+  const ttyTitle =
+    where.type === 'tty' && isForeground(onScreen) ? ctx.ttyTitles.get(where.label) : undefined
 
   /*
    * Title precedence, matching what Claude's own front ends show.
@@ -204,6 +215,8 @@ async function buildSession(
     isolated: !!job?.bgIsolation && job.bgIsolation !== 'none',
     waitingFor: entry.waitingFor ?? registry?.waitingFor ?? attached?.waitingFor,
     live,
+    suspended: live && isSuspended(proc),
+    resumable: !!transcriptPath,
     startedAt: entry.startedAt ?? 0,
     lastActivity: activity.at,
     lastActivitySource: activity.source,
@@ -257,6 +270,8 @@ async function recoverFinished(
       isFork: false,
       status: 'exited',
       live: false,
+      suspended: false,
+      resumable: true,
       startedAt: 0,
       lastActivity: activity.at,
       lastActivitySource: activity.source,

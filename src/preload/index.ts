@@ -39,6 +39,8 @@ const api = {
     ipcRenderer.invoke(CHANNELS.openTerminal, command),
   focusTty: (tty: string): Promise<string> => ipcRenderer.invoke(CHANNELS.focusTty, tty),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CHANNELS.openExternal, url),
+  stopSession: (pid: number, tty: string | null): Promise<boolean> =>
+    ipcRenderer.invoke(CHANNELS.stopSession, pid, tty),
 
   platform: process.platform,
   /** So the renderer can collapse paths to `~` without touching node. */

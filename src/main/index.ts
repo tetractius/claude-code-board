@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { scan } from '../core/scanner.ts'
@@ -10,8 +10,15 @@ import {
   buildBulkDeletePanel,
 } from '../core/commands.ts'
 import { openInTerminal, focusTty } from '../core/terminal.ts'
+import { stopSession } from '../core/stop.ts'
 import { resetClaudeBin } from '../core/claudeCli.ts'
-import type { BoardConfig, ScanResult } from '../core/types.ts'
+import {
+  attentionSummary,
+  newlyNeedingAttention,
+  snapshot,
+  type StatusSnapshot,
+} from '../core/attention.ts'
+import type { BoardConfig, BoardSession, ScanResult } from '../core/types.ts'
 import { CHANNELS } from './ipc.ts'
 import { watchClaudeState } from './watcher.ts'
 
@@ -35,6 +42,10 @@ let stopWatching: (() => void) | null = null
 /** Guards against overlapping scans when watch events arrive in a burst. */
 let scanning = false
 let rescanQueued = false
+/** Statuses at the last pushed scan, to notify on transitions only. */
+let lastStatuses: StatusSnapshot | null = null
+/** Held until dismissed: a garbage-collected Notification drops its click handler. */
+const shown = new Set<Notification>()
 
 async function runScan(): Promise<ScanResult> {
   const config = await loadConfig()
@@ -50,6 +61,7 @@ async function pushScan(): Promise<void> {
   try {
     const result = await runScan()
     win?.webContents.send(CHANNELS.sessionsPushed, result)
+    await notifyAttention(result)
   } catch (err) {
     console.error('[board] scan failed:', err)
   } finally {
@@ -59,6 +71,47 @@ async function pushScan(): Promise<void> {
       void pushScan()
     }
   }
+}
+
+function showBoard(): void {
+  if (!win) createWindow()
+  else {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+  }
+}
+
+/**
+ * Clicking goes where the session is: its terminal when it has one, the board
+ * otherwise - or when the terminal can no longer be found.
+ */
+function notify(s: BoardSession): void {
+  // Name and what happened, nothing else: the path and the prompt are on the
+  // card, one click away.
+  const n = new Notification({ title: s.title, body: attentionSummary(s) })
+  shown.add(n)
+  n.on('close', () => shown.delete(n))
+  n.on('click', () => {
+    shown.delete(n)
+    if (s.where.type === 'tty' && process.platform === 'darwin') {
+      focusTty(s.where.label).catch(showBoard)
+    } else {
+      showBoard()
+    }
+  })
+  n.show()
+}
+
+async function notifyAttention(result: ScanResult): Promise<void> {
+  // A failed scan returns no sessions; diffing against it would announce every
+  // waiting session again once the next scan succeeds.
+  if (result.sessions.length === 0 && result.error) return
+  const fresh = newlyNeedingAttention(lastStatuses, result.sessions)
+  lastStatuses = snapshot(result.sessions)
+  if (fresh.length === 0 || !Notification.isSupported()) return
+  if (!(await loadConfig()).notify) return
+  for (const s of fresh) notify(s)
 }
 
 async function startPolling(): Promise<void> {
@@ -88,6 +141,12 @@ function registerIpc(): void {
   ipcMain.handle(CHANNELS.bulkDeletePanel, (_e, sessions) => buildBulkDeletePanel(sessions))
   ipcMain.handle(CHANNELS.openTerminal, (_e, command: string) => openInTerminal(command))
   ipcMain.handle(CHANNELS.focusTty, (_e, tty: string) => focusTty(tty))
+  ipcMain.handle(CHANNELS.stopSession, async (_e, pid: number, tty: string | null) => {
+    if (!Number.isInteger(pid) || pid <= 1) throw new Error(`not a pid: ${pid}`)
+    const stopped = await stopSession(pid, tty)
+    void pushScan()
+    return stopped
+  })
   ipcMain.handle(CHANNELS.openExternal, (_e, url: string) => {
     // Only ever hand http(s) links to the OS.
     if (!/^https?:\/\//i.test(url)) throw new Error('refusing to open a non-http url')

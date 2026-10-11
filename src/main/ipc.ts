@@ -12,4 +12,5 @@ export const CHANNELS = {
   openTerminal: 'board:open-terminal',
   focusTty: 'board:focus-tty',
   openExternal: 'board:open-external',
+  stopSession: 'board:stop-session',
 } as const

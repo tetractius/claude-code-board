@@ -16,6 +16,7 @@ interface Props {
   onSelect: (key: string) => void
   onToggleChecked: (key: string) => void
   onFocusTty: (s: BoardSession) => void
+  onStop: (key: string, pid: number, tty: string | null) => Promise<void>
 }
 
 /**
@@ -36,6 +37,7 @@ export default function BoardGrid({
   onSelect,
   onToggleChecked,
   onFocusTty,
+  onStop,
 }: Props) {
   if (sessions.length === 0) {
     return (
@@ -64,6 +66,7 @@ export default function BoardGrid({
           onDelete={onDelete}
           onSelect={onSelect}
           onFocusTty={onFocusTty}
+          onStop={onStop}
         />
       ))}
     </div>

@@ -24,6 +24,12 @@ interface Command {
   warnings?: string[]
 }
 
+/** Electron prefixes errors thrown in the main process; the card only needs the message. */
+function remoteMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.replace(/^Error invoking remote method '[^']*': Error: /, '')
+}
+
 export default function App() {
   const [scan, setScan] = useState<ScanResult>({ sessions: [], scannedAt: 0 })
   const [notes, setNotes] = useState<NoteMap>({})
@@ -124,20 +130,37 @@ export default function App() {
 
   const onClearChecked = useCallback(() => setCheckedKeys(new Set()), [])
 
+  /** A short message on one card, cleared after a few seconds. */
+  const flash = useCallback((key: string, message: string) => {
+    setFocusError({ key, message })
+    setTimeout(() => setFocusError((prev) => (prev?.key === key ? null : prev)), 4000)
+  }, [])
+
   /**
    * Jump to the terminal a session is running in. Shared by the tty chip and
    * the Enter key, so both behave identically - including doing nothing at all
    * for a session that has no terminal to jump to.
    */
-  const onFocusTty = useCallback((s: BoardSession) => {
-    if (!canFocusTty(s)) return
-    setFocusError(null)
-    void api.focusTty(s.where.label).catch((err: Error) => {
-      const message = err.message.replace(/^Error invoking remote method '[^']*': Error: /, '')
-      setFocusError({ key: s.key, message })
-      setTimeout(() => setFocusError((prev) => (prev?.key === s.key ? null : prev)), 4000)
-    })
-  }, [])
+  const onFocusTty = useCallback(
+    (s: BoardSession) => {
+      if (!canFocusTty(s)) return
+      setFocusError(null)
+      void api.focusTty(s.where.label).catch((err) => flash(s.key, remoteMessage(err)))
+    },
+    [flash],
+  )
+
+  const onStop = useCallback(
+    async (key: string, pid: number, tty: string | null) => {
+      try {
+        const stopped = await api.stopSession(pid, tty)
+        if (!stopped) flash(key, `Still shutting down. If it stays stuck, run kill -9 ${pid} in a terminal.`)
+      } catch (err) {
+        flash(key, remoteMessage(err))
+      }
+    },
+    [flash],
+  )
 
   const onRefresh = useCallback(() => {
     setScanning(true)
@@ -391,6 +414,7 @@ export default function App() {
             onSelect={onSelect}
             onToggleChecked={onToggleChecked}
             onFocusTty={onFocusTty}
+            onStop={onStop}
           />
         )}
       </main>
