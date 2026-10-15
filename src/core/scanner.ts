@@ -49,10 +49,14 @@ function deriveStatus(entry: AgentEntry, live: boolean, attached: RegistryEntry 
   return 'active'
 }
 
-function ttyOf(proc: ProcInfo | undefined): string | null {
+export function ttyOf(proc: ProcInfo | undefined): string | null {
   if (!proc || !isClaudeProcess(proc)) return null
   const { tty } = proc
-  return tty && tty !== '??' && tty !== '-' ? tty : null
+  // A process with no controlling terminal prints `??` on macOS but a single
+  // `?` on Linux, where terminals are `pts/N` rather than `ttysNNN`. Matching
+  // only the macOS spelling gave every headless session on Linux a terminal
+  // named `?`.
+  return tty && !tty.startsWith('?') && tty !== '-' ? tty : null
 }
 
 /**
