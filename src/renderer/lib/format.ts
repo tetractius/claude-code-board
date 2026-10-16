@@ -49,11 +49,16 @@ interface StatusStyle {
 /*
  * `dot` doubles as the card's left-edge accent, so a wall of cards can be read
  * by edge colour alone and the two can never drift apart.
+ *
+ * Traffic-light colours, one meaning each: green is running, red needs you,
+ * grey is quiet. Amber is left to the warning chips (restart to update), so a
+ * busy session never looks like a warning, and a board of idle sessions reads
+ * as calm rather than as a wall of colour.
  */
 const STATUS_STYLES: Record<Status, StatusStyle> = {
-  busy: { dot: 'bg-bile', label: 'busy', urgent: false, active: true },
+  busy: { dot: 'bg-verdigris', label: 'busy', urgent: false, active: true },
   working: {
-    dot: 'bg-bile',
+    dot: 'bg-verdigris',
     label: 'working',
     urgent: false,
     active: true,
@@ -71,13 +76,13 @@ const STATUS_STYLES: Record<Status, StatusStyle> = {
     active: false,
   },
   active: {
-    dot: 'bg-verdigris',
+    dot: 'bg-ash',
     label: 'active',
     urgent: false,
     active: false,
   },
   idle: {
-    dot: 'bg-verdigris',
+    dot: 'bg-ash',
     label: 'idle',
     urgent: false,
     active: false,
