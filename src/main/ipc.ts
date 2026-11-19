@@ -19,6 +19,7 @@ export const CHANNELS = {
   hostGet: 'board:host:get',
   hostSet: 'board:host:set',
   hostTest: 'board:host:test',
+  hostInstallNode: 'board:host:install-node',
   focusRemote: 'board:focus-remote',
   openRemote: 'board:open-remote',
 } as const

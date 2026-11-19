@@ -35,6 +35,7 @@ import {
   setActiveHost,
   stopRemote,
   testHost,
+  installRemoteNode,
 } from './hosts.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -234,6 +235,11 @@ function registerIpc(): void {
     return activeHost()
   })
   ipcMain.handle(CHANNELS.hostTest, (_e, host: string) => testHost(host))
+  ipcMain.handle(CHANNELS.hostInstallNode, async (_e, host: string) => {
+    const summary = await installRemoteNode(host)
+    if (host === activeHost()) void pushScan()
+    return summary
+  })
   ipcMain.handle(CHANNELS.focusRemote, (_e, session: BoardSession) => focusRemoteSession(session))
   ipcMain.handle(CHANNELS.openRemote, (_e, session: BoardSession) => {
     if (!session.host) throw new Error('Not a remote session.')

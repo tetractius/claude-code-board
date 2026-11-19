@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 import { promisify } from 'node:util'
 import { buildProcIndex, terminalOf, type ProcInfo } from './ps.ts'
 import { focusTty } from './terminal.ts'
+import { splitHost } from './hostname.ts'
 import type { BoardSession } from './types.ts'
 
 const run = promisify(execFile)
@@ -32,33 +33,50 @@ const WITH_VALUE = new Set('BbcDEeFIiJLlmOoPpQRSWw'.split(''))
  * (`ssh -V`) or the destination cannot be found.
  */
 export function sshDestination(args: string): string | null {
+  return sshTarget(args)?.host ?? null
+}
+
+/**
+ * Host and user of an `ssh` command line: `ssh me@devbox` and
+ * `ssh -l me devbox` are both `{ user: 'me', host: 'devbox' }`. The user is
+ * null when the command line does not say (ssh_config may still set one).
+ */
+export function sshTarget(args: string): { user: string | null; host: string } | null {
   const tokens = args.trim().split(/\s+/).slice(1)
+  let login: string | null = null
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i]
-    if (t === '--') return hostPart(tokens[i + 1])
+    if (t === '--') return target(tokens[i + 1], login)
     if (t.startsWith('-') && t.length > 1) {
       // Flags can be bundled (`-tA`); the first one that takes a value ends
       // the bundle, with the value attached or as the next token.
       for (let j = 1; j < t.length; j++) {
         if (WITH_VALUE.has(t[j])) {
-          if (j === t.length - 1) i++
+          const value = j === t.length - 1 ? tokens[++i] : t.slice(j + 1)
+          if (t[j] === 'l') login = value ?? null
           break
         }
       }
       continue
     }
-    return hostPart(t)
+    return target(t, login)
   }
   return null
 }
 
-function hostPart(destination: string | undefined): string | null {
+function target(
+  destination: string | undefined,
+  login: string | null,
+): { user: string | null; host: string } | null {
   if (!destination) return null
-  let d = destination.replace(/^ssh:\/\//, '')
-  d = d.slice(d.lastIndexOf('@') + 1)
-  if (destination.startsWith('ssh://')) d = d.replace(/:\d+$/, '')
+  const uri = destination.startsWith('ssh://')
+  let d = uri ? destination.slice('ssh://'.length) : destination
+  const at = d.lastIndexOf('@')
+  const user = at === -1 ? login : d.slice(0, at)
+  d = d.slice(at + 1)
+  if (uri) d = d.replace(/:\d+$/, '')
   d = d.replace(/^\[(.*)\]$/, '$1')
-  return d || null
+  return d ? { user: user || null, host: d } : null
 }
 
 export interface SshClient {
@@ -67,13 +85,19 @@ export interface SshClient {
   tty: string | null
 }
 
-/** Local `ssh` processes connected to `host`. */
-export function sshClientsFor(host: string, procs: Map<number, ProcInfo>): SshClient[] {
-  const want = host.toLowerCase()
+/**
+ * Local `ssh` processes connected to `destination` - a host as configured,
+ * possibly `me@devbox`. A configured user rules out a tab that names a
+ * different one; a tab that names none could be either, so it still counts.
+ */
+export function sshClientsFor(destination: string, procs: Map<number, ProcInfo>): SshClient[] {
+  const want = splitHost(destination)
   const out: SshClient[] = []
   for (const p of procs.values()) {
     if (basename(p.comm) !== 'ssh') continue
-    if (sshDestination(p.args)?.toLowerCase() !== want) continue
+    const t = sshTarget(p.args)
+    if (!t || t.host.toLowerCase() !== want.host.toLowerCase()) continue
+    if (want.user && t.user && t.user !== want.user) continue
     out.push({ pid: p.pid, tty: terminalOf(p) })
   }
   return out

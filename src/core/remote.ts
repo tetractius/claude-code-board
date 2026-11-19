@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { Writable } from 'node:stream'
 import { createHash } from 'node:crypto'
 import { isValidHost } from './hostname.ts'
 import type { ScanResult } from './types.ts'
@@ -13,9 +14,9 @@ import type { ScanResult } from './types.ts'
  * the SSH connection's stdin and stdout. The remote needs Node 18+ and nothing
  * else.
  *
- * Only a host name is ever configured. Everything else - user, port, identity
- * file, jump hosts, multiplexing - is ssh's business, read from
- * `~/.ssh/config` as it would be for any other `ssh <host>`. Connections run
+ * Only a host, optionally with a user (`me@devbox`), is ever configured.
+ * Everything else - port, identity file, jump hosts, multiplexing - is ssh's
+ * business, read from `~/.ssh/config` as for any other `ssh`. Connections run
  * with BatchMode, so ssh never stops to ask for a password or a passphrase: a
  * host without key access fails with a message saying so, rather than hanging.
  */
@@ -43,6 +44,9 @@ export interface RemoteHello {
   platform: string
 }
 
+/** Where a host's own Node is looked for, after PATH. */
+const NODE_PATHS = ['/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node']
+
 export interface RemoteOptions {
   /** The bundled remote scanner, exactly as it will be uploaded. */
   script: Buffer
@@ -50,31 +54,62 @@ export interface RemoteOptions {
   sshBin?: string
   /** How long to wait for the remote scanner to come up, upload included. */
   connectTimeoutMs?: number
+  /** Overrides the fixed places Node is looked for on the host; for tests. */
+  nodePaths?: string[]
+}
+
+/**
+ * A failure with a machine-readable reason, so the caller can tell "this
+ * host has no Node, offer to install one" from everything else.
+ */
+export class RemoteError extends Error {
+  readonly reason?: string
+  constructor(message: string, reason?: string) {
+    super(message)
+    this.reason = reason
+  }
 }
 
 /**
  * Run by the remote's `sh -s`. Everything is inside one function, called on
  * the last line, so the shell has read the whole script before running any
  * of it: `head -c` then reads the upload from the same stdin, and the shell
- * cannot have consumed any of it as script, nor the script as upload.
+ * cannot have consumed any of it as script, nor the script as upload. The
+ * `exit` on that same line means an early return never goes on to read
+ * whatever is left on stdin as more script.
  *
  * Node is looked for on PATH, then on a login shell's PATH and an interactive
- * one's (where nvm, fnm and volta usually put it), then in the usual places.
+ * one's (where nvm, fnm and volta usually put it), then in the usual places,
+ * and last in `~/.claude-board/remote/node` - the board's own, if it was
+ * installed there (see remoteNode.ts). The first that is 18 or newer wins, so
+ * a host's own Node is used when it has a good one.
  */
-export function bootstrapScript(hash: string, size: number): string {
+export function bootstrapScript(hash: string, size: number, nodePaths = NODE_PATHS): string {
   const say = (json: string) => `printf '%s\\n' '${MARK}${json}'`
   return `main() {
   d="$HOME/.claude-board/remote"
   f="$d/board-remote-${hash}.mjs"
   node=
-  pick() { [ -z "$node" ] && [ -n "$1" ] && [ -x "$1" ] && node=$1; return 0; }
-  pick "$(command -v node 2>/dev/null)"
-  pick "$("\${SHELL:-sh}" -lc 'command -v node' </dev/null 2>/dev/null | tail -n 1)"
-  pick "$("\${SHELL:-sh}" -ic 'command -v node' </dev/null 2>/dev/null | tail -n 1)"
-  for c in /opt/homebrew/bin/node /usr/local/bin/node /usr/bin/node; do pick "$c"; done
-  if [ -z "$node" ]; then ${say('{"stage":"error","reason":"no-node"}')}; return; fi
-  if ! "$node" -e 'process.exit(+process.versions.node.split(".")[0] >= 18 ? 0 : 1)' 2>/dev/null; then
-    printf '%s{"stage":"error","reason":"old-node","node":"%s"}\\n' '${MARK}' "$("$node" -v 2>/dev/null)"
+  old=
+  consider() {
+    [ -z "$node" ] && [ -n "$1" ] && [ -x "$1" ] || return 0
+    if "$1" -e 'process.exit(+process.versions.node.split(".")[0] >= 18 ? 0 : 1)' 2>/dev/null; then
+      node=$1
+    else
+      old=$("$1" -v 2>/dev/null)
+    fi
+  }
+  consider "$(command -v node 2>/dev/null)"
+  consider "$("\${SHELL:-sh}" -lc 'command -v node' </dev/null 2>/dev/null | tail -n 1)"
+  consider "$("\${SHELL:-sh}" -ic 'command -v node' </dev/null 2>/dev/null | tail -n 1)"
+  for c in ${nodePaths.map((p) => `'${p}'`).join(' ')}; do consider "$c"; done
+  consider "$d/node/bin/node"
+  if [ -z "$node" ]; then
+    if [ -n "$old" ]; then
+      printf '%s{"stage":"error","reason":"old-node","node":"%s"}\\n' '${MARK}' "$old"
+    else
+      ${say('{"stage":"error","reason":"no-node"}')}
+    fi
     return
   fi
   if [ ! -f "$f" ]; then
@@ -88,7 +123,7 @@ export function bootstrapScript(hash: string, size: number): string {
   fi
   exec "$node" "$f" --serve
 }
-main
+main; exit
 `
 }
 
@@ -107,15 +142,21 @@ export function explainSshFailure(host: string, stderr: string, code: number | n
   if (/Could not resolve hostname/i.test(stderr)) {
     return `${host}: unknown host name. Check the spelling, or add it to ~/.ssh/config.`
   }
+  // cmd.exe or PowerShell answering for `sh`: a Windows host.
+  if (/is not recognized as (an internal or external command|the name of a cmdlet)/i.test(stderr)) {
+    return `${host}: this looks like a Windows host. The board supports Linux and macOS hosts (WSL counts as Linux).`
+  }
   return `${host}: ${last || `ssh exited with code ${code ?? 'unknown'}`}`
 }
+
+const INSTALL_HINT = 'Test it in Settings → Remote hosts to install the board’s own copy.'
 
 function explainStage(host: string, stage: { reason?: string; node?: string }): string {
   switch (stage.reason) {
     case 'no-node':
-      return `${host}: no Node.js found. The board runs its scanner there with Node 18 or newer - install it, or put it on the PATH of a login shell.`
+      return `${host}: no Node.js 18 or newer there. ${INSTALL_HINT}`
     case 'old-node':
-      return `${host}: Node ${stage.node || '(unknown version)'} is too old. The board needs Node 18 or newer there.`
+      return `${host}: its Node ${stage.node || '(unknown version)'} is older than the 18 the board needs. ${INSTALL_HINT}`
     case 'upload':
       return `${host}: could not write the board's scanner to ~/.claude-board/remote.`
     default:
@@ -250,7 +291,7 @@ export class RemoteHost {
           if (msg.stage === 'upload') {
             child.stdin.write(script)
           } else if (msg.stage === 'error') {
-            fail(new Error(explainStage(this.host, msg)))
+            fail(new RemoteError(explainStage(this.host, msg), String(msg.reason)))
           } else if (msg.hello) {
             this.hello = msg.hello as RemoteHello
             settled = true
@@ -278,9 +319,77 @@ export class RemoteHost {
         fail(err)
       })
 
-      child.stdin.write(bootstrapScript(this.hash, script.length))
+      child.stdin.write(bootstrapScript(this.hash, script.length, this.opts.nodePaths))
     })
   }
+}
+
+export interface ScriptOptions {
+  sshBin?: string
+  timeoutMs?: number
+  /** Each reply line as it arrives, with the remote's stdin to answer on. */
+  onMessage?: (msg: Record<string, unknown>, stdin: Writable) => void
+  /**
+   * Leave stdin open after the script, for one that reads more from it (an
+   * upload); `onMessage` must then end it. Otherwise it closes at once.
+   */
+  holdStdin?: boolean
+}
+
+/**
+ * Run a one-off script on a host with `sh -s` and collect its `@@board`
+ * lines. For short jobs - a probe, an install - that do not need the
+ * long-lived scanner connection. Throws with ssh's explanation when the host
+ * could not be reached or the script never said anything.
+ */
+export function runScript(
+  destination: string,
+  script: string,
+  opts: ScriptOptions = {},
+): Promise<{ messages: Record<string, unknown>[]; stderr: string }> {
+  if (!isValidHost(destination)) return Promise.reject(new Error(`Not a host name: ${destination}`))
+  const { sshBin = 'ssh', timeoutMs = 60_000, onMessage, holdStdin = false } = opts
+  return new Promise((resolve, reject) => {
+    const child = spawn(sshBin, [...SSH_OPTIONS, '--', destination, 'sh', '-s'], { stdio: 'pipe' })
+    child.stdin.on('error', () => {})
+    const messages: Record<string, unknown>[] = []
+    let stderr = ''
+    let buffered = ''
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error(`${destination}: no answer after ${Math.round(timeoutMs / 1000)}s`))
+    }, timeoutMs)
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr = (stderr + chunk.toString()).slice(-4000)
+    })
+    child.stdout.on('data', (chunk: Buffer) => {
+      buffered += chunk.toString()
+      let nl: number
+      while ((nl = buffered.indexOf('\n')) !== -1) {
+        const line = buffered.slice(0, nl)
+        buffered = buffered.slice(nl + 1)
+        if (!line.startsWith(MARK)) continue
+        try {
+          const msg = JSON.parse(line.slice(MARK.length)) as Record<string, unknown>
+          messages.push(msg)
+          onMessage?.(msg, child.stdin)
+        } catch {
+          // not ours
+        }
+      }
+    })
+    child.on('error', (err) => {
+      clearTimeout(timer)
+      reject(new Error(`${destination}: could not run ssh: ${err.message}`))
+    })
+    child.on('exit', (code) => {
+      clearTimeout(timer)
+      if (messages.length === 0) reject(new Error(explainSshFailure(destination, stderr, code)))
+      else resolve({ messages, stderr })
+    })
+    if (holdStdin) child.stdin.write(script)
+    else child.stdin.end(script)
+  })
 }
 
 /**

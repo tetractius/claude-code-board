@@ -85,7 +85,15 @@ hosts and run there with **their** Node, which may be as old as 18. So:
 - The remote never says which host it is. Main tags every remote scan
   (`tagRemote`), so a card's `host` always comes from the board's own Settings.
 
-`npm test` exercises the whole path with a stand-in `ssh` (`test-remote.ts`).
+A host without Node gets the board's own, pinned in `src/core/remoteNode.ts`
+(`NODE_RELEASE`). To move to a newer Node, change `version` and all four
+`sha256` values together, copying them from that release's
+`https://nodejs.org/dist/<version>/SHASUMS256.txt` (the `.tar.gz` lines).
+Never compute them from a download: the point of pinning is that the board
+does not trust the server the file came from.
+
+`npm test` exercises the whole path with a stand-in `ssh` (`test-remote.ts`),
+including the Node install against a stand-in nodejs.org.
 For a real host, the Settings **Test** button connects once, scans, and
 reports what it found.
 

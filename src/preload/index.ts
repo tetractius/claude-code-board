@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { CHANNELS } from '../main/ipc.ts'
 import type { BoardConfig, BoardSession, NoteMap, Note, ScanResult } from '../core/types.ts'
 import type { DeletePanel } from '../core/commands.ts'
+import type { HostTest } from '../main/hosts.ts'
 
 /**
  * The renderer's entire view of the outside world. Keeping it this small is
@@ -46,8 +47,10 @@ const api = {
   /** The host being shown; '' is this machine. */
   activeHost: (): Promise<string> => ipcRenderer.invoke(CHANNELS.hostGet),
   setHost: (host: string): Promise<string> => ipcRenderer.invoke(CHANNELS.hostSet, host),
-  /** Connect to a host once and say what is there, for the Settings button. */
-  testHost: (host: string): Promise<string> => ipcRenderer.invoke(CHANNELS.hostTest, host),
+  /** Connect to a host once and say what is there; a host must pass it to be added. */
+  testHost: (host: string): Promise<HostTest> => ipcRenderer.invoke(CHANNELS.hostTest, host),
+  /** Install the board's own Node on a host that has none. */
+  installNode: (host: string): Promise<string> => ipcRenderer.invoke(CHANNELS.hostInstallNode, host),
   /** Best effort; resolves '' when no local terminal is connected to it. */
   focusRemote: (s: BoardSession): Promise<string> => ipcRenderer.invoke(CHANNELS.focusRemote, s),
   /** A new terminal window: ssh to the session's host and resume it there. */

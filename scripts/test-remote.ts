@@ -19,28 +19,36 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { buildRemote } from './build-remote.mjs'
 import {
+  RemoteError,
   RemoteHost,
   explainSshFailure,
   isValidHost,
   tagRemote,
 } from '../src/core/remote.ts'
+import { installNode, nodePlatform, type NodeRelease } from '../src/core/remoteNode.ts'
 import {
   parseLsofPorts,
   pickTerminal,
   sshClientsFor,
   sshDestination,
+  sshTarget,
 } from '../src/core/sshTerminal.ts'
 import { buildRemoteResumeCommand } from '../src/core/commands.ts'
+import { splitHost } from '../src/core/hostname.ts'
 import type { ProcInfo } from '../src/core/ps.ts'
 import type { BoardSession } from '../src/core/types.ts'
 
-// --- Host names: only ever a name, never something ssh would parse as more.
-for (const ok of ['devbox', 'build-01.example.com', '10.0.0.5', 'my_host']) {
+// --- Hosts: a name, optionally with a user - never something ssh would
+// parse as more.
+for (const ok of ['devbox', 'build-01.example.com', '10.0.0.5', 'my_host', 'me@devbox', 'tetractius@zt-tdts3.filtri.io', 'a.b@devbox']) {
   assert.equal(isValidHost(ok), true, ok)
 }
-for (const bad of ['', 'me@devbox', 'devbox:2222', '-oProxyCommand=sh', 'a b', 'devbox;rm', '.hidden']) {
+for (const bad of ['', 'devbox:2222', '-oProxyCommand=sh', 'a b', 'devbox;rm', '.hidden', '@devbox', 'me@', 'me@@devbox', 'me@-oFoo', '-me@devbox', "me'@devbox", 'me@devbox:22']) {
   assert.equal(isValidHost(bad), false, bad)
 }
+
+assert.deepEqual(splitHost('tetractius@zt-tdts3.filtri.io'), { user: 'tetractius', host: 'zt-tdts3.filtri.io' })
+assert.deepEqual(splitHost('devbox'), { user: null, host: 'devbox' })
 
 // --- Which host a local `ssh` command line is connected to.
 assert.equal(sshDestination('ssh devbox'), 'devbox')
@@ -52,6 +60,10 @@ assert.equal(sshDestination('ssh ssh://me@devbox:2222'), 'devbox')
 assert.equal(sshDestination('ssh -- devbox'), 'devbox')
 assert.equal(sshDestination('ssh -J jump devbox'), 'devbox')
 assert.equal(sshDestination('ssh -V'), null)
+assert.deepEqual(sshTarget('ssh me@devbox'), { user: 'me', host: 'devbox' })
+assert.deepEqual(sshTarget('ssh -l me devbox'), { user: 'me', host: 'devbox' })
+assert.deepEqual(sshTarget('ssh -lme devbox'), { user: 'me', host: 'devbox' })
+assert.deepEqual(sshTarget('ssh -p 22 devbox'), { user: null, host: 'devbox' })
 
 // --- Matching a remote session to a local terminal tab.
 const procs = new Map<number, ProcInfo>(
@@ -85,12 +97,42 @@ assert.equal(pickTerminal(clients, ports, undefined), null)
 assert.equal(pickTerminal(clients, ports, 59999), null)
 assert.equal(pickTerminal(sshClientsFor('otherbox', procs), new Map(), undefined), 'ttys003')
 assert.equal(pickTerminal(sshClientsFor('nowhere', procs), new Map(), 50111), null)
+// A configured user rules out tabs logged in as someone else, but not tabs
+// that do not say (ssh_config may supply the same user).
+const users = new Map<number, ProcInfo>(
+  [
+    { pid: 20, tty: 'ttys010', args: 'ssh me@devbox' },
+    { pid: 21, tty: 'ttys011', args: 'ssh other@devbox' },
+    { pid: 22, tty: 'ttys012', args: 'ssh -l other devbox' },
+    { pid: 23, tty: 'ttys013', args: 'ssh devbox' },
+  ].map((p) => [p.pid, { ppid: 1, stat: 'S+', comm: 'ssh', ...p }]),
+)
+assert.deepEqual(sshClientsFor('me@devbox', users).map((c) => c.pid), [20, 23])
+assert.deepEqual(sshClientsFor('devbox', users).map((c) => c.pid), [20, 21, 22, 23])
+
+// --- Which official Node build a host gets, from what it says it is.
+const probe = (os: string, arch: string, libc = '') => nodePlatform({ os, arch, libc, fetch: 'curl', sum: 'sha256sum' })
+assert.deepEqual(probe('Linux', 'x86_64', 'glibc 2.39'), { platform: 'linux-x64' })
+assert.deepEqual(probe('Linux', 'amd64', 'glibc 2.28'), { platform: 'linux-x64' })
+assert.deepEqual(probe('Linux', 'aarch64', 'glibc 2.31'), { platform: 'linux-arm64' })
+assert.deepEqual(probe('Linux', 'x86_64', 'glibc '), { platform: 'linux-x64' }, 'unknown glibc: the trial run decides')
+assert.deepEqual(probe('Darwin', 'arm64'), { platform: 'darwin-arm64' })
+assert.deepEqual(probe('Darwin', 'x86_64'), { platform: 'darwin-x64' })
+assert.match((probe('Linux', 'x86_64', 'glibc 2.17') as { unsupported: string }).unsupported, /glibc 2\.17.*2\.28/)
+assert.match((probe('Linux', 'x86_64', 'musl') as { unsupported: string }).unsupported, /musl/)
+assert.match((probe('Linux', 'armv7l', 'glibc 2.36') as { unsupported: string }).unsupported, /armv7l/)
+assert.match((probe('MINGW64_NT-10.0', 'x86_64') as { unsupported: string }).unsupported, /Linux and macOS/)
+assert.match((probe('FreeBSD', 'amd64') as { unsupported: string }).unsupported, /FreeBSD/)
 
 // --- What ssh's failures turn into.
 assert.match(explainSshFailure('devbox', 'me@devbox: Permission denied (publickey).', 255), /ssh-copy-id devbox/)
 assert.match(explainSshFailure('devbox', 'Host key verification failed.', 255), /ssh devbox` once/)
 assert.match(explainSshFailure('devbox', 'ssh: Could not resolve hostname devbox: nodename nor servname', 255), /unknown host name/)
 assert.equal(explainSshFailure('devbox', '', 1), 'devbox: ssh exited with code 1')
+assert.match(
+  explainSshFailure('winbox', "'sh' is not recognized as an internal or external command,", 1),
+  /Windows host/,
+)
 
 // --- The resume command survives two rounds of shell parsing: the local
 // shell runs ssh, and the remote login shell runs what ssh hands it.
@@ -106,6 +148,8 @@ try {
   chmodSync(join(bin, 'ssh'), 0o755)
   chmodSync(join(bin, 'claude'), 0o755)
   const s = { cwd: odd, resumeSessionId: '1234-abcd' } as BoardSession
+  assert.match(buildRemoteResumeCommand(s, 'me@devbox'), /^ssh -t me@devbox '/)
+  assert.throws(() => buildRemoteResumeCommand(s, 'devbox; rm -rf ~'), /Not a host name/)
   const cmd = buildRemoteResumeCommand(s, 'devbox', join(bin, 'claude'))
   assert.match(cmd, /^ssh -t devbox '/)
   const out = execFileSync('/bin/sh', ['-c', cmd], {
@@ -259,6 +303,109 @@ exec /bin/sh -c "$*"
 } finally {
   for (const c of children) c.kill('SIGKILL')
   rmSync(home, { recursive: true, force: true })
+}
+
+// --- A host with no Node: the board installs its own, and connects with it.
+const bare = mkdtempSync(join(tmpdir(), 'board-remote-bare-'))
+const realNode = process.execPath
+process.env.HOME = bare
+try {
+  const bin = join(bare, 'bin')
+  mkdirSync(bin)
+  // No Node anywhere a login could find one: a stripped PATH, a login shell
+  // that prints nothing, and no fixed places to look.
+  process.env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+  const quiet = join(bin, 'quiet-shell')
+  writeFileSync(quiet, '#!/bin/sh\nexit 0\n')
+  chmodSync(quiet, 0o755)
+  process.env.SHELL = quiet
+  const ssh = join(bin, 'fake-ssh')
+  writeFileSync(
+    ssh,
+    '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in --) shift; break ;; -o) shift 2 ;; -*) shift ;; *) break ;; esac; done\nshift\nexec /bin/sh -c "$*"\n',
+  )
+  chmodSync(ssh, 0o755)
+  mkdirSync(join(bare, '.local/bin'), { recursive: true })
+  writeFileSync(join(bare, '.local/bin/claude'), '#!/bin/sh\ncase "$1" in --version) echo "2.1.999 (Claude Code)" ;; agents) echo "[]" ;; esac\n')
+  chmodSync(join(bare, '.local/bin/claude'), 0o755)
+
+  const scanner = readFileSync(await buildRemote(join(bare, 'bundle.mjs')))
+  const host = new RemoteHost('me@devbox', { script: scanner, sshBin: ssh, nodePaths: [] })
+  await assert.rejects(host.connect(), (err: Error) => {
+    assert.ok(err instanceof RemoteError)
+    assert.equal(err.reason, 'no-node')
+    assert.match(err.message, /no Node\.js 18 or newer/)
+    return true
+  })
+
+  // A stand-in nodejs.org: a release for this very machine, whose `node`
+  // hands over to the real one - so the trial run and the scanner both work.
+  const platform = `${process.platform}-${process.arch}` as 'darwin-arm64'
+  const release = (sha: string, baseUrl: string): NodeRelease => ({
+    version: process.version,
+    baseUrl,
+    sha256: { [platform]: sha } as NodeRelease['sha256'],
+  })
+  const dist = join(bare, 'dist')
+  const pack = (label: string, nodeScript: string) => {
+    const root = join(bare, `pack-${label}`)
+    const name = `node-${process.version}-${platform}`
+    mkdirSync(join(root, name, 'bin'), { recursive: true })
+    writeFileSync(join(root, name, 'bin/node'), nodeScript)
+    chmodSync(join(root, name, 'bin/node'), 0o755)
+    writeFileSync(join(root, name, 'README.md'), 'not extracted: only bin/node is')
+    const out = join(dist, label, process.version)
+    mkdirSync(out, { recursive: true })
+    const file = join(out, `${name}.tar.gz`)
+    execFileSync('tar', ['-czf', file, '-C', root, name])
+    const bytes = readFileSync(file)
+    return { file, bytes, sha: createHash('sha256').update(bytes).digest('hex'), url: `file://${join(dist, label)}` }
+  }
+  const good = pack('good', `#!/bin/sh\nexec '${realNode}' "$@"\n`)
+  const broken = pack('broken', '#!/bin/sh\necho "cannot execute binary file: Exec format error"\n')
+  const own = join(bare, '.claude-board/remote/node/bin/node')
+  const local = (bytes: Buffer) => async () => bytes
+
+  // The host downloads it itself, checks it, runs it, and only then installs it.
+  const installed = await installNode('me@devbox', { sshBin: ssh, release: release(good.sha, good.url) })
+  assert.match(installed, /downloaded there/)
+  assert.equal(execFileSync(own, ['-e', 'process.stdout.write(process.version)'], { encoding: 'utf8' }), process.version)
+  assert.deepEqual(readdirSync(join(bare, '.claude-board/remote')), ['node'], 'no scratch left behind')
+  assert.deepEqual(readdirSync(join(bare, '.claude-board/remote/node')), ['bin'], 'only the binary is unpacked')
+
+  // ...and the scanner now starts with it: nothing on PATH, nothing else changed.
+  const hello = await host.connect()
+  assert.equal(hello.node, process.version)
+  host.close()
+
+  // A build that does not run there is refused, and the working one stays.
+  await assert.rejects(
+    installNode('me@devbox', { sshBin: ssh, release: release(broken.sha, broken.url) }),
+    /does not run there.*Exec format error.*Nothing was changed/,
+  )
+  assert.equal(existsSync(own), true)
+  assert.equal(execFileSync(own, ['-e', 'process.stdout.write("still here")'], { encoding: 'utf8' }), 'still here')
+
+  // No route from the host: fetched here instead, checked, and uploaded.
+  rmSync(join(bare, '.claude-board/remote/node'), { recursive: true })
+  const uploaded = await installNode('me@devbox', {
+    sshBin: ssh,
+    release: release(good.sha, `file://${join(bare, 'nowhere')}`),
+    download: local(good.bytes),
+  })
+  assert.match(uploaded, /uploaded from this machine/)
+  assert.equal(existsSync(own), true)
+
+  // A download that does not match its pinned checksum is never run or kept -
+  // neither the host's copy nor the one fetched here.
+  rmSync(join(bare, '.claude-board/remote/node'), { recursive: true })
+  await assert.rejects(
+    installNode('me@devbox', { sshBin: ssh, release: release('0'.repeat(64), good.url), download: local(good.bytes) }),
+    /did not match its pinned checksum/,
+  )
+  assert.equal(existsSync(join(bare, '.claude-board/remote/node')), false)
+} finally {
+  rmSync(bare, { recursive: true, force: true })
 }
 
 console.log('ok')

@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { RemoteHost, isValidHost, tagRemote } from '../core/remote.ts'
+import { RemoteError, RemoteHost, isValidHost, tagRemote } from '../core/remote.ts'
+import { NODE_RELEASE, PRIVATE_NODE_DIR, installNode, planNodeInstall } from '../core/remoteNode.ts'
 import type { ScanResult } from '../core/types.ts'
 
 /**
@@ -81,12 +82,21 @@ export async function stopRemote(host: string, pid: number, tty: string | null):
   return (await remoteFor(host)).stop(pid, tty)
 }
 
+export interface HostTest {
+  ok: boolean
+  text: string
+  /** It failed only for want of Node, and the board can install its own. */
+  canInstall?: boolean
+}
+
 /**
- * The Settings "Test" button: connect, scan once, and say what is there. Uses
- * its own connection, so a test never disturbs the board.
+ * The Settings test, which a host must pass to be added: connect, scan once,
+ * and say what is there. Uses its own connection, so it never disturbs the
+ * board. A host with no usable Node is asked what it is, so the answer can
+ * say whether the board can install its own and which build that would be.
  */
-export async function testHost(host: string): Promise<string> {
-  if (!isValidHost(host)) throw new Error(`Not a host name: ${host}`)
+export async function testHost(host: string): Promise<HostTest> {
+  if (!isValidHost(host)) return { ok: false, text: `Not a host name: ${host}` }
   const remote = new RemoteHost(host, { script: await loadScript() })
   try {
     const hello = await remote.connect()
@@ -94,10 +104,38 @@ export async function testHost(host: string): Promise<string> {
     const claude = result.claudeVersion ? `, Claude ${result.claudeVersion.split(' ')[0]}` : ''
     const live = result.sessions.filter((s) => s.live).length
     const summary = `Connected: Node ${hello.node} on ${hello.platform}${claude}, ${live} live session${live === 1 ? '' : 's'}.`
-    return result.error ? `${summary} But: ${result.error}` : summary
+    return result.error ? { ok: false, text: `${summary} But: ${result.error}` } : { ok: true, text: summary }
+  } catch (err) {
+    const reason = err instanceof RemoteError ? err.reason : undefined
+    if (reason !== 'no-node' && reason !== 'old-node') return { ok: false, text: (err as Error).message }
+    const missing = reason === 'old-node' ? 'Its Node is older than 18.' : 'It has no Node.js 18 or newer.'
+    try {
+      const plan = await planNodeInstall(host)
+      if ('unsupported' in plan) return { ok: false, text: `${host}: ${missing} ${plan.unsupported}` }
+      return {
+        ok: false,
+        canInstall: true,
+        text:
+          `${host}: ${missing} The board can install its own: Node ${NODE_RELEASE.version} for ` +
+          `${plan.platform} (about 55 MB), kept in ~/${PRIVATE_NODE_DIR} and used only by the ` +
+          'board - never put on PATH, nothing else on the host touched.',
+      }
+    } catch (probeErr) {
+      return { ok: false, text: (probeErr as Error).message }
+    }
   } finally {
     remote.close()
   }
+}
+
+/** Install the board's own Node on a host; resolves with what was done. */
+export async function installRemoteNode(host: string): Promise<string> {
+  if (!isValidHost(host)) throw new Error(`Not a host name: ${host}`)
+  const summary = await installNode(host)
+  // A connection that failed for want of Node retries with the new one.
+  remotes.get(host)?.close()
+  remotes.delete(host)
+  return summary
 }
 
 export function closeAll(): void {
