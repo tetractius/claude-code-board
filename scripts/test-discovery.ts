@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { slugifyCwd } from '../src/core/registry.ts'
 import { ttyOf } from '../src/core/scanner.ts'
 import {
+  attentionSummary,
   isDormant,
   newlyFinished,
   newlyNeedingAttention,
@@ -54,6 +55,15 @@ assert.deepEqual(keys(newlyNeedingAttention(snapshot(first), second)), ['a', 'c'
 assert.deepEqual(newlyNeedingAttention(snapshot(second), second), [])
 // waiting -> blocked is still the same need, not a new one.
 assert.deepEqual(newlyNeedingAttention(snapshot(second), [card('a', 'blocked')]), [])
+
+// The notification body: what the session wants, in the fewest words that say it.
+const wants = (over: Partial<BoardSession>) =>
+  attentionSummary({ status: 'waiting', ...over } as BoardSession)
+assert.equal(wants({ needs: 'Approve the migration?' }), 'Approve the migration?')
+assert.equal(wants({ waitingFor: 'permission' }), 'Needs your permission')
+assert.equal(wants({ waitingFor: 'input' }), 'Waiting for input')
+assert.equal(wants({}), 'Waiting for you')
+assert.equal(wants({ status: 'blocked' }), 'Blocked')
 
 // Finished: busy -> idle once; busy -> waiting is a need, not a finish.
 const running = [card('a', 'busy'), card('b', 'busy'), card('c', 'working')]
