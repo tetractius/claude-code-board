@@ -8,10 +8,11 @@
   "type": "module",
   "scripts": {
     "postinstall": "node node_modules/electron/install.js && node scripts/brand-dev.mjs",
-    "dev": "electron-vite dev",
+    "dev": "npm run build:remote && electron-vite dev",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run typecheck && electron-vite build && npm run build:remote",
+    "build:remote": "node scripts/build-remote.mjs",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac --arm64 --publish never && cp scripts/install-macos.sh release/",
     "dist:linux": "scripts/dist-linux.sh",
@@ -19,7 +20,7 @@
     "icon": "electron scripts/make-icon.mjs",
     "brand:dev": "node scripts/brand-dev.mjs",
     "dist:mac:all": "npm run build && electron-builder --mac --arm64 --x64 --publish never && cp scripts/install-macos.sh release/",
-    "test": "node scripts/test-discovery.ts && node scripts/test-hooks.ts && node scripts/test-context.ts && node scripts/test-scan.ts"
+    "test": "node scripts/test-discovery.ts && node scripts/test-hooks.ts && node scripts/test-context.ts && node scripts/test-scan.ts && node scripts/test-remote.ts"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -30,6 +31,7 @@
     "electron": "^44.0.0",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",
+    "esbuild": "^0.25.12",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.0",
     "vite": "^7.1.0"

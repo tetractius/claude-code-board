@@ -39,8 +39,19 @@ const api = {
     ipcRenderer.invoke(CHANNELS.openTerminal, command),
   focusTty: (tty: string): Promise<string> => ipcRenderer.invoke(CHANNELS.focusTty, tty),
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CHANNELS.openExternal, url),
-  stopSession: (pid: number, tty: string | null): Promise<boolean> =>
-    ipcRenderer.invoke(CHANNELS.stopSession, pid, tty),
+  /** `host` is set for a session on a remote host, where the stop then runs. */
+  stopSession: (pid: number, tty: string | null, host?: string): Promise<boolean> =>
+    ipcRenderer.invoke(CHANNELS.stopSession, pid, tty, host),
+
+  /** The host being shown; '' is this machine. */
+  activeHost: (): Promise<string> => ipcRenderer.invoke(CHANNELS.hostGet),
+  setHost: (host: string): Promise<string> => ipcRenderer.invoke(CHANNELS.hostSet, host),
+  /** Connect to a host once and say what is there, for the Settings button. */
+  testHost: (host: string): Promise<string> => ipcRenderer.invoke(CHANNELS.hostTest, host),
+  /** Best effort; resolves '' when no local terminal is connected to it. */
+  focusRemote: (s: BoardSession): Promise<string> => ipcRenderer.invoke(CHANNELS.focusRemote, s),
+  /** A new terminal window: ssh to the session's host and resume it there. */
+  openRemote: (s: BoardSession): Promise<string> => ipcRenderer.invoke(CHANNELS.openRemote, s),
 
   hooksInstalled: (): Promise<boolean> => ipcRenderer.invoke(CHANNELS.hooksStatus),
   installHooks: (): Promise<void> => ipcRenderer.invoke(CHANNELS.hooksInstall),

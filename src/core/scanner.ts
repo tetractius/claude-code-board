@@ -328,6 +328,12 @@ export interface ScanOptions {
   finishedLimit?: number
   /** Context window in tokens, for `contextPercent`. */
   contextWindow?: number
+  /**
+   * Read session names from the terminal app's tab titles (macOS). Off for a
+   * remote scan: the remote has no window on this screen, and asking its GUI
+   * session over SSH would only prompt for automation permission there.
+   */
+  terminalTitles?: boolean
 }
 
 /** The single entry point. Safe to call from Electron's main process or a server. */
@@ -363,7 +369,8 @@ export async function scan(opts: ScanOptions = {}): Promise<ScanResult> {
     buildProcIndex(),
     readAllRegistry(),
   ])
-  const ttyTitles = await readTerminalTitles()
+  const ttyTitles =
+    opts.terminalTitles === false ? new Map<string, string>() : await readTerminalTitles()
   const contextWindow = opts.contextWindow ?? DEFAULT_CONFIG.contextWindow
 
   // Only registry entries backed by a live claude process count; the directory
