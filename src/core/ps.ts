@@ -65,6 +65,10 @@ export function isClaudeProcess(info: ProcInfo | undefined): boolean {
  * alive, so every other source still reports it as running, but it does
  * nothing until someone runs `fg` in that terminal. Typically it is hidden
  * behind whatever was started in the same tab afterwards.
+ *
+ * The leading `T` is POSIX `ps` state, not a macOS quirk: Linux reports a
+ * stopped process as `T` too (and a running one as `Ss+`, `S+`, ...), so this
+ * needs no platform guard.
  */
 export function isSuspended(info: ProcInfo | undefined): boolean {
   return !!info && info.stat.startsWith('T')
