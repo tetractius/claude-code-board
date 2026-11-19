@@ -77,6 +77,9 @@ export function isSuspended(info: ProcInfo | undefined): boolean {
 /**
  * In the foreground process group of its terminal - the `+` in `ps` state.
  * Of several processes on one tty, this is the one actually on screen.
+ *
+ * Like `T`, the `+` flag is POSIX: a Linux pty reports `Ss+` / `S+` the same
+ * way, so this needs no platform guard either.
  */
 export function isForeground(info: ProcInfo | undefined): boolean {
   return !!info && info.stat.includes('+')

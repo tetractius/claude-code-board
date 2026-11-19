@@ -87,7 +87,8 @@ export interface BoardSession {
   /**
    * Claude saved a conversation for it, so `claude --resume` can open it.
    * A session that never got a prompt has none, and resuming it fails with
-   * "No conversation found".
+   * "No conversation found". So does one that ran with transcript persistence
+   * off (see AGENTS.md), which exists on disk only as `projects/<slug>/<uuid>/`.
    */
   resumable: boolean
   startedAt: number

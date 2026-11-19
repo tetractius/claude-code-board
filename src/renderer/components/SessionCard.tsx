@@ -261,7 +261,7 @@ function SessionCard({
             title={
               s.resumable
                 ? undefined
-                : 'Nothing saved to resume: this session never got a prompt, so Claude kept no conversation.'
+                : 'Nothing saved to resume: Claude kept no conversation for this session. Either it never got a prompt, or it ran with transcript saving off.'
             }
             className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
                        text-bone hover:border-verdigris/60 hover:bg-verdigris/10
