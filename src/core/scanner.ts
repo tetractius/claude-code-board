@@ -303,7 +303,7 @@ async function recoverFinished(
  * A session already past the configured window cannot be on it, so it must be
  * on the 1M-token one rather than at 140%.
  */
-function contextUsage(
+export function contextUsage(
   tokens: number | undefined,
   window: number,
 ): Pick<BoardSession, 'contextTokens' | 'contextPercent'> {
