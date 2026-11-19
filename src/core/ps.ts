@@ -60,9 +60,17 @@ export function isClaudeProcess(info: ProcInfo | undefined): boolean {
   return !!info && /(^|\/)claude(\.app)?($|\/|\s)/i.test(info.comm)
 }
 
-/** The terminal a process is attached to, or null when `ps` shows none. */
+/**
+ * The terminal a process is attached to, or null when `ps` shows none.
+ *
+ * A process with no controlling terminal prints `??` on macOS but a single `?`
+ * on Linux, where terminals are `pts/N` rather than `ttysNNN`. Matching only
+ * the macOS spelling gave every headless session on Linux a terminal named
+ * `?` - and made `stopSession` refuse it as having "moved terminals".
+ */
 export function terminalOf(info: ProcInfo | undefined): string | null {
-  return info && info.tty !== '??' && info.tty !== '-' ? info.tty : null
+  const tty = info?.tty
+  return tty && !tty.startsWith('?') && tty !== '-' ? tty : null
 }
 
 /**

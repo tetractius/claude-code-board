@@ -96,10 +96,18 @@ export default function App() {
         blocks: [
           {
             title: 'Resume this session',
-            note: s.needsRestart
-              ? `Running ${s.version}. Resuming starts a new process on the installed ` +
-                'build, which is what "Restart to update" is asking for.'
-              : undefined,
+            note:
+              [
+                s.live &&
+                  `Still running${s.where.type === 'tty' ? ` on ${s.where.label}` : ''}: ` +
+                    'this starts a second Claude on the same conversation. Quit that one ' +
+                    'first, or switch to its terminal instead.',
+                s.needsRestart &&
+                  `Running ${s.version}. Resuming starts a new process on the installed ` +
+                    'build, which is what "Restart to update" is asking for.',
+              ]
+                .filter(Boolean)
+                .join(' ') || undefined,
             command: cmd,
           },
         ],

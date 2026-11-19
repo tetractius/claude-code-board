@@ -13,7 +13,13 @@ import {
   settleFinished,
   snapshot,
 } from '../src/core/attention.ts'
-import { isForeground, isSuspended, type ProcInfo } from '../src/core/ps.ts'
+import {
+  buildProcIndex,
+  isForeground,
+  isSuspended,
+  terminalOf,
+  type ProcInfo,
+} from '../src/core/ps.ts'
 import { stopSession } from '../src/core/stop.ts'
 import type { BoardSession, Status } from '../src/core/types.ts'
 
@@ -75,6 +81,16 @@ assert.equal(isForeground(proc('S+')), true)
 assert.equal(isForeground(proc('T')), false)
 assert.equal(isForeground(undefined), false)
 
+// stopSession's identity guard uses terminalOf, so it must agree with ttyOf
+// on both spellings of "no terminal" - otherwise a headless Linux session
+// is refused as having moved to a terminal named `?`.
+const tty = (t: string) => ({ tty: t }) as ProcInfo
+assert.equal(terminalOf(tty('??')), null, 'macOS: no tty')
+assert.equal(terminalOf(tty('?')), null, 'Linux: no tty')
+assert.equal(terminalOf(tty('-')), null)
+assert.equal(terminalOf(tty('pts/3')), 'pts/3')
+assert.equal(terminalOf(undefined), null)
+
 // Stop only ever signals the session it was asked about. A pid that is not
 // Claude, or Claude on a different terminal, is refused and left running.
 const alive = (pid: number) => {
@@ -97,13 +113,16 @@ const paused = spawn('/bin/sh', ['-c', "trap 'kill -STOP $$' TERM; while :; do s
 })
 await new Promise((r) => setTimeout(r, 200))
 process.kill(paused.pid!, 'SIGSTOP')
+// The stand-ins inherit this process's controlling terminal, if it has one:
+// none under CI or an agent, a real one when run by hand from a shell.
+const here = terminalOf((await buildProcIndex()).get(process.pid))
 try {
   await assert.rejects(stopSession(other.pid!, null), /no longer this session/)
   assert.equal(alive(other.pid!), true)
-  await assert.rejects(stopSession(fake.pid!, 'ttys999'), /no longer this session/)
+  await assert.rejects(stopSession(fake.pid!, 'ttys-elsewhere'), /no longer this session/)
   assert.equal(alive(fake.pid!), true)
-  assert.equal(await stopSession(fake.pid!, null), true)
-  assert.equal(await stopSession(paused.pid!, null, 2000), true)
+  assert.equal(await stopSession(fake.pid!, here), true)
+  assert.equal(await stopSession(paused.pid!, here, 2000), true)
 } finally {
   other.kill()
   fake.kill()

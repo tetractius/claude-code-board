@@ -35,6 +35,16 @@ export function canFocusTty(s: BoardSession): boolean {
   return s.where.type === 'tty' && api.platform === 'darwin'
 }
 
+const NOT_RESUMABLE =
+  'Nothing saved to resume: Claude kept no conversation for this session. ' +
+  'Either it never got a prompt, or it ran with transcript saving off.'
+
+/** Resume and the split button's caret: the same control, so the same look. */
+const RESUME_CLASS =
+  'cursor-pointer border border-suture bg-slab py-1 text-[11px] text-bone ' +
+  'hover:border-verdigris/60 hover:bg-verdigris/10 disabled:cursor-not-allowed ' +
+  'disabled:text-ash/50 disabled:hover:border-suture disabled:hover:bg-slab'
+
 function Chip({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
     <span
@@ -262,30 +272,40 @@ function SessionCard({
           {/*
             A running session already has a terminal: going to it is the useful
             action, and resuming would start a second Claude on the same
-            conversation. Resume is for sessions with nothing open.
+            conversation. So Open is the primary half of a split button.
+
+            The caret keeps the resume command one click away. focusTty only
+            drives iTerm and Terminal.app, so in Ghostty, kitty, WezTerm,
+            Alacritty or tmux Open cannot find the window, and the command is
+            the only way back into the session from the board.
           */}
           {s.live && canFocus ? (
-            <button
-              onClick={() => onFocusTty(s)}
-              title={`Bring the ${s.where.label} window to the front`}
-              className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                         text-bone hover:border-verdigris/60 hover:bg-verdigris/10"
-            >
-              Open
-            </button>
+            <div className="flex">
+              <button
+                onClick={() => onFocusTty(s)}
+                title={`Bring the ${s.where.label} window to the front`}
+                className="relative cursor-pointer rounded-l border border-suture bg-slab px-2.5
+                           py-1 text-[11px] text-bone hover:z-10 hover:border-verdigris/60
+                           hover:bg-verdigris/10"
+              >
+                Open
+              </button>
+              <button
+                onClick={() => onResume(s)}
+                disabled={!s.resumable}
+                aria-label="Resume command"
+                title={s.resumable ? 'Resume command, to copy or open in a new terminal' : NOT_RESUMABLE}
+                className={`${RESUME_CLASS} relative -ml-px rounded-r px-1.5 hover:z-10`}
+              >
+                ▾
+              </button>
+            </div>
           ) : (
             <button
               onClick={() => onResume(s)}
               disabled={!s.resumable}
-              title={
-                s.resumable
-                  ? undefined
-                  : 'Nothing saved to resume: Claude kept no conversation for this session. Either it never got a prompt, or it ran with transcript saving off.'
-              }
-              className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                         text-bone hover:border-verdigris/60 hover:bg-verdigris/10
-                         disabled:cursor-not-allowed disabled:text-ash/50
-                         disabled:hover:border-suture disabled:hover:bg-slab"
+              title={s.resumable ? undefined : NOT_RESUMABLE}
+              className={`${RESUME_CLASS} rounded px-2.5`}
             >
               Resume
             </button>
