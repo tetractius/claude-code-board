@@ -14,3 +14,9 @@ declare global {
 export const api: BoardApi = window.board
 
 export const HOME = api.home
+
+/** Electron prefixes errors thrown in the main process; the UI only needs the message. */
+export function errorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.replace(/^Error invoking remote method '[^']*': Error: /, '')
+}

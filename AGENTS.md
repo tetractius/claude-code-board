@@ -71,6 +71,32 @@ a server later. Anything macOS-only — AppleScript for terminal titles and for
 focusing a window — must be guarded with `process.platform` and degrade to a
 board that still works, never to a crash.
 
+## Remote hosts
+
+`src/remote/serve.ts`, and everything it imports from `src/core`, is bundled
+by `scripts/build-remote.mjs` into one file. That file is uploaded to remote
+hosts and run there with **their** Node, which may be as old as 18. So:
+
+- `src/core` stays dependency-free, and uses no API newer than Node 18.
+  esbuild lowers syntax for the `node18` target, but it does not polyfill APIs.
+- Anything local to this screen goes behind a `ScanOptions` flag that the
+  remote turns off, as `terminalTitles` does. The terminal-title lookup goes
+  through AppleScript, which would prompt for permission on the remote's GUI.
+- The remote never says which host it is. Main tags every remote scan
+  (`tagRemote`), so a card's `host` always comes from the board's own Settings.
+
+A host without Node gets the board's own, pinned in `src/core/remoteNode.ts`
+(`NODE_RELEASE`). To move to a newer Node, change `version` and all four
+`sha256` values together, copying them from that release's
+`https://nodejs.org/dist/<version>/SHASUMS256.txt` (the `.tar.gz` lines).
+Never compute them from a download: the point of pinning is that the board
+does not trust the server the file came from.
+
+`npm test` exercises the whole path with a stand-in `ssh` (`test-remote.ts`),
+including the Node install against a stand-in nodejs.org.
+For a real host, the Settings **Test** button connects once, scans, and
+reports what it found.
+
 ## Checks
 
 `npm run smoke` prints the scan as a table; it is the fastest way to see what

@@ -4,7 +4,7 @@ import BoardGrid from './components/BoardGrid.tsx'
 import CommandModal, { type CommandBlock, type ModalKind } from './components/CommandModal.tsx'
 import { canFocusTty } from './components/SessionCard.tsx'
 import SettingsModal from './components/SettingsModal.tsx'
-import { api } from './lib/api.ts'
+import { api, errorMessage as remoteMessage } from './lib/api.ts'
 import { projectName } from './lib/format.ts'
 import { columnCount, isTypingTarget, step, type Direction } from './lib/navigation.ts'
 import {
@@ -25,11 +25,6 @@ interface Command {
   warnings?: string[]
 }
 
-/** Electron prefixes errors thrown in the main process; the card only needs the message. */
-function remoteMessage(err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err)
-  return message.replace(/^Error invoking remote method '[^']*': Error: /, '')
-}
 
 export default function App() {
   const [scan, setScan] = useState<ScanResult>({ sessions: [], scannedAt: 0 })
@@ -53,6 +48,28 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null)
   const gridRef = useRef<HTMLDivElement>(null)
 
+  /*
+   * The machine being shown; '' is this one. Main owns the choice and tags
+   * every scan with it, so the board can never show one host's sessions under
+   * another host's name.
+   */
+  const host = scan.host ?? ''
+
+  /*
+   * The host last asked for. A scan of the previous host can already be on its
+   * way when the host is switched; landing after the switch, it would put that
+   * machine's cards back up. Main announces every switch with an empty scan
+   * (`scannedAt: 0`) for the new host, which is what moves this along - so a
+   * switch main makes by itself, like removing the host in Settings, is
+   * followed too. Null until the first switch: accept whatever comes.
+   */
+  const wantedHost = useRef<string | null>(null)
+  const accept = useCallback((result: ScanResult): boolean => {
+    const h = result.host ?? ''
+    if (result.scannedAt === 0) wantedHost.current = h
+    return wantedHost.current === null || h === wantedHost.current
+  }, [])
+
   // Initial load, then sit on the push channel - the renderer never polls.
   useEffect(() => {
     void Promise.all([api.loadNotes(), api.loadConfig(), api.scan()]).then(
@@ -64,10 +81,11 @@ export default function App() {
       },
     )
     return api.onSessions((result) => {
+      if (!accept(result)) return
       setScan(result)
       setScanning(false)
     })
-  }, [])
+  }, [accept])
 
   // Re-render on a timer so the "4m ago" labels stay honest between scans.
   const [, setTick] = useState(0)
@@ -97,7 +115,7 @@ export default function App() {
         title: `Resume · ${s.title}`,
         blocks: [
           {
-            title: 'Resume this session',
+            title: s.host ? `Resume this session on ${s.host}` : 'Resume this session',
             note:
               [
                 s.live &&
@@ -131,12 +149,14 @@ export default function App() {
   const onSelect = useCallback((key: string) => setSelectedKey(key), [])
 
   const onToggleChecked = useCallback((key: string) => {
+    // Ticking is for bulk delete, which a remote host does not support.
+    if (host) return
     setCheckedKeys((prev) => {
       const next = new Set(prev)
       if (!next.delete(key)) next.add(key)
       return next
     })
-  }, [])
+  }, [host])
 
   const onClearChecked = useCallback(() => setCheckedKeys(new Set()), [])
 
@@ -155,16 +175,33 @@ export default function App() {
     (s: BoardSession) => {
       if (!canFocusTty(s)) return
       setFocusError(null)
-      void api.focusTty(s.where.label).catch((err) => flash(s.key, remoteMessage(err)))
+      // Remote: a best effort at the local tab ssh'd into it. Finding none is
+      // expected, so it fails quietly - the chip's hover says as much.
+      if (s.host) void api.focusRemote(s).catch(() => {})
+      else void api.focusTty(s.where.label).catch((err) => flash(s.key, remoteMessage(err)))
+    },
+    [flash],
+  )
+
+  const onOpenRemote = useCallback(
+    (s: BoardSession) => {
+      setFocusError(null)
+      void api.openRemote(s).catch((err) => flash(s.key, remoteMessage(err)))
     },
     [flash],
   )
 
   const onStop = useCallback(
-    async (key: string, pid: number, tty: string | null) => {
+    async (key: string, pid: number, tty: string | null, host?: string) => {
       try {
-        const stopped = await api.stopSession(pid, tty)
-        if (!stopped) flash(key, `Still shutting down. If it stays stuck, run kill -9 ${pid} in a terminal.`)
+        const stopped = await api.stopSession(pid, tty, host)
+        if (!stopped) {
+          flash(
+            key,
+            `Still shutting down. If it stays stuck, run kill -9 ${pid} in a terminal` +
+              (host ? ` on ${host}.` : '.'),
+          )
+        }
       } catch (err) {
         flash(key, remoteMessage(err))
       }
@@ -175,13 +212,27 @@ export default function App() {
   const onRefresh = useCallback(() => {
     setScanning(true)
     void api.scan().then((r) => {
-      setScan(r)
+      if (accept(r)) setScan(r)
       setScanning(false)
     })
-  }, [])
+  }, [accept])
 
   const onSaveConfig = useCallback((patch: Partial<BoardConfig>) => {
     void api.saveConfig(patch).then(setConfig)
+  }, [])
+
+  /*
+   * Switch machine. The board empties at once, saying where it is connecting,
+   * rather than leaving the last host's cards up under the new host's name.
+   */
+  const onHost = useCallback((next: string) => {
+    wantedHost.current = next
+    setSelectedKey(null)
+    setCheckedKeys(new Set())
+    setScan({ sessions: [], scannedAt: 0, host: next || undefined })
+    void api.setHost(next).catch((err) =>
+      setScan({ sessions: [], scannedAt: Date.now(), host: next || undefined, error: remoteMessage(err) }),
+    )
   }, [])
 
   const projects = useMemo(
@@ -354,8 +405,9 @@ export default function App() {
   }, [visible, selectedKey, move, onFocusTty, onToggleChecked, command, settingsOpen])
 
   const onSelectAllShown = useCallback(() => {
+    if (host) return
     setCheckedKeys(new Set(visible.map((s) => s.key)))
-  }, [visible])
+  }, [visible, host])
 
   const onDeleteChecked = useCallback(() => {
     const chosen = scan.sessions.filter((s) => checkedKeys.has(s.key))
@@ -416,6 +468,9 @@ export default function App() {
         onRefresh={onRefresh}
         onSettings={() => setSettingsOpen(true)}
         scanning={scanning}
+        host={host}
+        hosts={config.remoteHosts}
+        onHost={onHost}
       />
 
       {scan.error && (
@@ -425,9 +480,9 @@ export default function App() {
       )}
 
       <main className="min-h-0 flex-1 overflow-y-auto">
-        {scanning && scan.scannedAt === 0 ? (
+        {scan.scannedAt === 0 ? (
           <div className="flex h-full items-center justify-center text-[13px] text-ash">
-            Scanning sessions…
+            {host ? `Connecting to ${host}…` : 'Scanning sessions…'}
           </div>
         ) : (
           <BoardGrid
@@ -444,6 +499,7 @@ export default function App() {
             onToggleChecked={onToggleChecked}
             onFocusTty={onFocusTty}
             onStop={onStop}
+            onOpenRemote={onOpenRemote}
           />
         )}
       </main>

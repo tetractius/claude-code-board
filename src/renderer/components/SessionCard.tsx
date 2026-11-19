@@ -27,13 +27,22 @@ interface Props {
   onDelete: (s: BoardSession) => void
   onSelect: (key: string) => void
   onFocusTty: (s: BoardSession) => void
-  onStop: (key: string, pid: number, tty: string | null) => Promise<void>
+  onStop: (key: string, pid: number, tty: string | null, host?: string) => Promise<void>
+  /** A remote session's Open: a new terminal, ssh to its host, resume it there. */
+  onOpenRemote: (s: BoardSession) => void
 }
 
-/** Whether this session can be jumped to - macOS, and running in a terminal. */
+/**
+ * Whether this session can be jumped to - macOS, and running in a terminal.
+ * For a remote session that is a best effort: the local tab ssh'd into it,
+ * if one can be found.
+ */
 export function canFocusTty(s: BoardSession): boolean {
   return s.where.type === 'tty' && api.platform === 'darwin'
 }
+
+/** What a control says on a remote card when it cannot work there. */
+const NOT_REMOTE = 'Not supported on a remote server.'
 
 const NOT_RESUMABLE =
   'Nothing saved to resume: Claude kept no conversation for this session. ' +
@@ -78,9 +87,11 @@ function SessionCard({
   onSelect,
   onFocusTty,
   onStop,
+  onOpenRemote,
 }: Props) {
   const dead = TERMINAL_STATUS.has(s.status)
   const canFocus = canFocusTty(s)
+  const remote = !!s.host
   const stoppablePid = s.live && s.kind === 'interactive' ? s.pid : undefined
   const annotated = noteText.trim().length > 0
   const style = statusStyle(s.status)
@@ -110,8 +121,11 @@ function SessionCard({
           checked={checked}
           onChange={() => onToggleChecked(s.key)}
           onClick={(e) => e.stopPropagation()}
-          title="Select for bulk delete"
-          className="size-3 shrink-0 cursor-pointer accent-artery"
+          // Selecting is only ever for bulk delete, which cannot reach a remote host.
+          disabled={remote}
+          title={remote ? NOT_REMOTE : 'Select for bulk delete'}
+          className="size-3 shrink-0 cursor-pointer accent-artery disabled:cursor-not-allowed
+                     disabled:opacity-40"
         />
         <StatusBadge
           status={s.status}
@@ -146,7 +160,12 @@ function SessionCard({
         {canFocus ? (
           <button
             onClick={() => onFocusTty(s)}
-            title={`Bring the ${s.where.label} window to the front`}
+            title={
+              remote
+                ? `${s.where.label} on ${s.host}. Brings the local terminal tab connected to it ` +
+                  'to the front - if one can be found; otherwise nothing happens.'
+                : `Bring the ${s.where.label} window to the front`
+            }
             className="cursor-pointer rounded border border-suture bg-slab px-1.5 py-0.5
                        font-mono text-[10px] text-ash transition-colors hover:border-verdigris/60
                        hover:bg-verdigris/10 hover:text-bone"
@@ -301,14 +320,25 @@ function SessionCard({
             Alacritty or tmux Open cannot find the window, and the command is
             the only way back into the session from the board.
           */}
-          {s.live && canFocus ? (
+          {/*
+            On a remote host there is no local window to bring forward, so Open
+            reconnects instead: a new terminal, ssh to the host, and the session
+            resumed there.
+          */}
+          {s.live && (canFocus || remote) ? (
             <div className="flex">
               <button
-                onClick={() => onFocusTty(s)}
-                title={`Bring the ${s.where.label} window to the front`}
-                className="relative cursor-pointer rounded-l border border-suture bg-slab px-2.5
-                           py-1 text-[11px] text-bone hover:z-10 hover:border-verdigris/60
-                           hover:bg-verdigris/10"
+                onClick={() => (remote ? onOpenRemote(s) : onFocusTty(s))}
+                disabled={remote && !s.resumable}
+                title={
+                  remote
+                    ? s.resumable
+                      ? `Open a new terminal, ssh to ${s.host} and resume this session there. ` +
+                        'If it is still running, that is a second Claude on the same conversation.'
+                      : NOT_RESUMABLE
+                    : `Bring the ${s.where.label} window to the front`
+                }
+                className={`${RESUME_CLASS} relative rounded-l px-2.5 hover:z-10`}
               >
                 Open
               </button>
@@ -336,14 +366,18 @@ function SessionCard({
             <StopButton
               suspended={s.suspended}
               onStop={() =>
-                onStop(s.key, stoppablePid, s.where.type === 'tty' ? s.where.label : null)
+                onStop(s.key, stoppablePid, s.where.type === 'tty' ? s.where.label : null, s.host)
               }
             />
           )}
           <button
             onClick={() => onDelete(s)}
+            disabled={remote}
+            title={remote ? NOT_REMOTE : undefined}
             className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                       text-ash hover:border-clot hover:bg-clot/15 hover:text-artery"
+                       text-ash hover:border-clot hover:bg-clot/15 hover:text-artery
+                       disabled:cursor-not-allowed disabled:text-ash/40 disabled:hover:border-suture
+                       disabled:hover:bg-slab"
           >
             Delete
           </button>
@@ -385,6 +419,7 @@ export default memo(SessionCard, (a, b) => {
     x.suspended === y.suspended &&
     x.resumable === y.resumable &&
     x.contextPercent === y.contextPercent &&
+    x.host === y.host &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&
     x.command === y.command

@@ -1,11 +1,28 @@
 import { basename, dirname, join } from 'node:path'
 import { HOME, REGISTRY_DIR } from './paths.ts'
 import { shellQuote } from './util.ts'
+import { isValidHost } from './hostname.ts'
 import type { BoardSession } from './types.ts'
 
 /** The command to drop back into a session, ready to paste into any shell. */
 export function buildResumeCommand(s: BoardSession): string {
   return `cd ${shellQuote(s.cwd)} && claude --resume ${s.resumeSessionId}`
+}
+
+/**
+ * Resume a session that lives on another host: ssh there with a terminal, and
+ * resume it in its own directory. The remote command is one quoted argument,
+ * which the remote login shell runs.
+ *
+ * `claudeBin` is the binary the remote scan found. A non-interactive ssh
+ * command does not read the profile that usually puts ~/.local/bin on PATH,
+ * so a bare `claude` would often not be found there.
+ */
+export function buildRemoteResumeCommand(s: BoardSession, host: string, claudeBin?: string): string {
+  // Interpolated unquoted below, so it must be a bare host name and nothing more.
+  if (!isValidHost(host)) throw new Error(`Not a host name: ${host}`)
+  const remote = `cd ${shellQuote(s.cwd)} && ${shellQuote(claudeBin || 'claude')} --resume ${shellQuote(s.resumeSessionId)}`
+  return `ssh -t ${host} ${shellQuote(remote)}`
 }
 
 /**

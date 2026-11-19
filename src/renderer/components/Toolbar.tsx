@@ -1,5 +1,7 @@
 import type { RefObject } from 'react'
+import HostMenu from './HostMenu.tsx'
 import { statusStyle } from '../lib/format.ts'
+import { hostColor } from '../lib/hosts.ts'
 import type { Status } from '../../core/types.ts'
 
 export type SortKey = 'activity' | 'title' | 'project'
@@ -32,6 +34,10 @@ interface Props {
   onRefresh: () => void
   onSettings: () => void
   scanning: boolean
+  /** The host being shown; '' is this machine. */
+  host: string
+  hosts: readonly string[]
+  onHost: (host: string) => void
 }
 
 const SORTS: { key: SortKey; label: string }[] = [
@@ -44,8 +50,14 @@ const SORTS: { key: SortKey; label: string }[] = [
 const TALLY: Status[] = ['waiting', 'blocked', 'busy', 'working', 'idle']
 
 export default function Toolbar(p: Props) {
+  const color = hostColor(p.host, p.hosts)
   return (
-    <header className="drag-region shrink-0 border-b border-suture bg-crypt/80 backdrop-blur">
+    <header
+      className="drag-region shrink-0 border-b border-suture bg-crypt/80 backdrop-blur"
+      // A remote board is ruled in its host's colour, so it is never mistaken
+      // for this machine's.
+      style={color ? { boxShadow: `inset 0 2px 0 ${color}` } : undefined}
+    >
       <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 pl-20">
         <h1 className="mr-1 text-[13px] font-semibold tracking-wide text-bone">
           Claude Code Board
@@ -122,6 +134,8 @@ export default function Toolbar(p: Props) {
               </option>
             ))}
           </select>
+
+          <HostMenu host={p.host} hosts={p.hosts} onHost={p.onHost} onManage={p.onSettings} />
 
           <label className="no-drag flex cursor-pointer items-center gap-1.5 text-[12px] text-ash">
             <input
@@ -201,8 +215,11 @@ export default function Toolbar(p: Props) {
           ))}
           <button
             onClick={p.onSelectAllShown}
-            className="ml-auto cursor-pointer text-[11px] text-ash hover:text-bone"
-            title="Tick every card currently shown"
+            // Ticking is only for bulk delete, which cannot reach a remote host.
+            disabled={!!p.host}
+            className="ml-auto cursor-pointer text-[11px] text-ash hover:text-bone
+                       disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ash"
+            title={p.host ? 'Not supported on a remote server.' : 'Tick every card currently shown'}
           >
             select {p.shown} of {p.total}
           </button>

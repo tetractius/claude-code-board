@@ -111,6 +111,18 @@ export interface BoardSession {
   /** The Claude version this process is actually running. */
   version?: string
   /**
+   * The SSH host this session was scanned on, as configured in Settings; unset
+   * for this machine. Set by the board after the remote scan, never by the
+   * remote side, so a card always says where it came from.
+   */
+  host?: string
+  /**
+   * The client port of the SSH connection the session was started over, from
+   * its `SSH_CONNECTION`. It names the local `ssh` process - and so the local
+   * terminal tab - the session is sitting in. Remote Linux hosts only.
+   */
+  sshClientPort?: number
+  /**
    * The process is running an older build than the one now installed, so it
    * will keep running the old code until it is restarted. This is the same
    * condition the CLI reports in-session as "Restart to update".
@@ -121,6 +133,8 @@ export interface BoardSession {
 export interface ScanResult {
   sessions: BoardSession[]
   scannedAt: number
+  /** The SSH host these sessions are on; unset for this machine. */
+  host?: string
   /** Set when the claude binary could not be run; sessions will be empty. */
   error?: string
   claudeBin?: string
@@ -162,6 +176,11 @@ export interface BoardConfig {
   contextWindow: number
   /** A live session idle for longer than this many hours counts as dormant. */
   dormantHours: number
+  /**
+   * SSH hosts the board can show instead of this machine. Host names only, as
+   * typed after `ssh`: user, port, keys and jump hosts belong in ~/.ssh/config.
+   */
+  remoteHosts: string[]
 }
 
 export const DEFAULT_CONFIG: BoardConfig = {
@@ -174,6 +193,7 @@ export const DEFAULT_CONFIG: BoardConfig = {
   notifyDone: true,
   contextWindow: 200_000,
   dormantHours: 24,
+  remoteHosts: [],
 }
 
 /** Statuses that mean a human needs to do something. */

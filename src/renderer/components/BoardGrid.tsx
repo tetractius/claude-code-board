@@ -16,7 +16,8 @@ interface Props {
   onSelect: (key: string) => void
   onToggleChecked: (key: string) => void
   onFocusTty: (s: BoardSession) => void
-  onStop: (key: string, pid: number, tty: string | null) => Promise<void>
+  onStop: (key: string, pid: number, tty: string | null, host?: string) => Promise<void>
+  onOpenRemote: (s: BoardSession) => void
 }
 
 /**
@@ -38,6 +39,7 @@ export default function BoardGrid({
   onToggleChecked,
   onFocusTty,
   onStop,
+  onOpenRemote,
 }: Props) {
   if (sessions.length === 0) {
     return (
@@ -67,6 +69,7 @@ export default function BoardGrid({
           onSelect={onSelect}
           onFocusTty={onFocusTty}
           onStop={onStop}
+          onOpenRemote={onOpenRemote}
         />
       ))}
     </div>

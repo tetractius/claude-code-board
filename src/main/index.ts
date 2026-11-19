@@ -6,9 +6,11 @@ import { loadNotes, setNote, flushNotes } from '../core/notes.ts'
 import { loadConfig, saveConfig } from '../core/config.ts'
 import {
   buildResumeCommand,
+  buildRemoteResumeCommand,
   buildDeletePanel,
   buildBulkDeletePanel,
 } from '../core/commands.ts'
+import { focusRemoteSession } from '../core/sshTerminal.ts'
 import { openInTerminal, focusTty } from '../core/terminal.ts'
 import { stopSession } from '../core/stop.ts'
 import { resetClaudeBin } from '../core/claudeCli.ts'
@@ -25,6 +27,16 @@ import { hooksInstalled, installHooks, uninstallHooks } from '../core/hooks.ts'
 import { NEEDS_ATTENTION, type BoardConfig, type BoardSession, type ScanResult } from '../core/types.ts'
 import { CHANNELS } from './ipc.ts'
 import { watchClaudeState } from './watcher.ts'
+import {
+  activeHost,
+  closeAll,
+  remoteClaudeBin,
+  scanHost,
+  setActiveHost,
+  stopRemote,
+  testHost,
+  installRemoteNode,
+} from './hosts.ts'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -55,6 +67,13 @@ const shown = new Set<Notification>()
 
 async function runScan(): Promise<ScanResult> {
   const config = await loadConfig()
+  const host = activeHost()
+  if (host) {
+    return scanHost(host, {
+      finishedLimit: config.finishedLimit,
+      contextWindow: config.contextWindow,
+    })
+  }
   return scan({
     claudeBin: config.claudeBin,
     finishedLimit: config.finishedLimit,
@@ -70,6 +89,12 @@ async function pushScan(): Promise<void> {
   scanning = true
   try {
     const result = await runScan()
+    // The host was switched while this scan ran: it is the old host's board,
+    // so drop it and scan the one now being shown.
+    if ((result.host ?? '') !== activeHost()) {
+      rescanQueued = true
+      return
+    }
     win?.webContents.send(CHANNELS.sessionsPushed, result)
     await notifyAttention(result)
   } catch (err) {
@@ -99,12 +124,15 @@ function showBoard(): void {
 function notify(s: BoardSession, body: string): void {
   // Name and what happened, nothing else: the path and the prompt are on the
   // card, one click away.
-  const n = new Notification({ title: s.title, body })
+  // A remote session says where it is: the same title can be open on two machines.
+  const n = new Notification({ title: s.host ? `${s.title} · ${s.host}` : s.title, body })
   shown.add(n)
   n.on('close', () => shown.delete(n))
   n.on('click', () => {
     shown.delete(n)
-    if (s.where.type === 'tty' && process.platform === 'darwin') {
+    if (s.host) {
+      void focusRemoteSession(s).then((app) => app || showBoard())
+    } else if (s.where.type === 'tty' && process.platform === 'darwin') {
       focusTty(s.where.label).catch(showBoard)
     } else {
       showBoard()
@@ -144,6 +172,39 @@ async function notifyAttention(result: ScanResult): Promise<void> {
   }
 }
 
+/**
+ * Statuses are diffed scan to scan to find what changed. Across a host switch
+ * that diff is meaningless - every waiting session on the new host would be
+ * announced as newly waiting - so it starts over.
+ */
+function resetAttention(): void {
+  lastStatuses = null
+  pendingFinishes.clear()
+  app.setBadgeCount(0)
+}
+
+/** Show `host` ('' for this machine): an empty board saying so at once, then its scan. */
+function switchHost(host: string, configured: readonly string[]): void {
+  setActiveHost(host, configured)
+  resetAttention()
+  win?.webContents.send(CHANNELS.sessionsPushed, {
+    sessions: [],
+    scannedAt: 0,
+    host: host || undefined,
+  } satisfies ScanResult)
+  void pushScan()
+}
+
+function resumeCommandFor(s: BoardSession): string {
+  return s.host
+    ? buildRemoteResumeCommand(s, s.host, remoteClaudeBin(s.host))
+    : buildResumeCommand(s)
+}
+
+function refuseRemote(sessions: BoardSession[]): void {
+  if (sessions.some((s) => s.host)) throw new Error('Deleting is not supported on a remote server.')
+}
+
 async function startPolling(): Promise<void> {
   const { pollIntervalMs } = await loadConfig()
   if (pollTimer) clearInterval(pollTimer)
@@ -163,12 +224,36 @@ function registerIpc(): void {
     // interval needs the timer rebuilt.
     resetClaudeBin()
     await startPolling()
-    void pushScan()
+    // The host being shown was just removed from Settings: back to this machine.
+    if (activeHost() && !next.remoteHosts.includes(activeHost())) switchHost('', next.remoteHosts)
+    else void pushScan()
     return next
   })
-  ipcMain.handle(CHANNELS.resumeCommand, (_e, session) => buildResumeCommand(session))
-  ipcMain.handle(CHANNELS.deletePanel, (_e, session) => buildDeletePanel(session))
-  ipcMain.handle(CHANNELS.bulkDeletePanel, (_e, sessions) => buildBulkDeletePanel(sessions))
+  ipcMain.handle(CHANNELS.hostGet, () => activeHost())
+  ipcMain.handle(CHANNELS.hostSet, async (_e, host: string) => {
+    switchHost(host, (await loadConfig()).remoteHosts)
+    return activeHost()
+  })
+  ipcMain.handle(CHANNELS.hostTest, (_e, host: string) => testHost(host))
+  ipcMain.handle(CHANNELS.hostInstallNode, async (_e, host: string) => {
+    const summary = await installRemoteNode(host)
+    if (host === activeHost()) void pushScan()
+    return summary
+  })
+  ipcMain.handle(CHANNELS.focusRemote, (_e, session: BoardSession) => focusRemoteSession(session))
+  ipcMain.handle(CHANNELS.openRemote, (_e, session: BoardSession) => {
+    if (!session.host) throw new Error('Not a remote session.')
+    return openInTerminal(resumeCommandFor(session))
+  })
+  ipcMain.handle(CHANNELS.resumeCommand, (_e, session: BoardSession) => resumeCommandFor(session))
+  ipcMain.handle(CHANNELS.deletePanel, (_e, session: BoardSession) => {
+    refuseRemote([session])
+    return buildDeletePanel(session)
+  })
+  ipcMain.handle(CHANNELS.bulkDeletePanel, (_e, sessions: BoardSession[]) => {
+    refuseRemote(sessions)
+    return buildBulkDeletePanel(sessions)
+  })
   ipcMain.handle(CHANNELS.openTerminal, (_e, command: string) => openInTerminal(command))
   ipcMain.handle(CHANNELS.focusTty, (_e, tty: string) => focusTty(tty))
   ipcMain.handle(CHANNELS.hooksStatus, () => hooksInstalled())
@@ -180,9 +265,9 @@ function registerIpc(): void {
     await uninstallHooks()
     void pushScan()
   })
-  ipcMain.handle(CHANNELS.stopSession, async (_e, pid: number, tty: string | null) => {
+  ipcMain.handle(CHANNELS.stopSession, async (_e, pid: number, tty: string | null, host?: string) => {
     if (!Number.isInteger(pid) || pid <= 1) throw new Error(`not a pid: ${pid}`)
-    const stopped = await stopSession(pid, tty)
+    const stopped = host ? await stopRemote(host, pid, tty) : await stopSession(pid, tty)
     void pushScan()
     return stopped
   })
@@ -256,7 +341,10 @@ void app.whenReady().then(async () => {
 
   registerIpc()
   createWindow()
-  stopWatching = watchClaudeState(() => void pushScan())
+  // Local files changing say nothing about a remote host, which is polled.
+  stopWatching = watchClaudeState(() => {
+    if (!activeHost()) void pushScan()
+  })
   await startPolling()
 
   app.on('activate', () => {
@@ -272,6 +360,7 @@ app.on('before-quit', async (event) => {
   if (pollTimer) clearInterval(pollTimer)
   stopWatching?.()
   stopWatching = null
+  closeAll()
   // Make sure a note typed a moment ago is not lost to the write debounce.
   event.preventDefault()
   await flushNotes()
