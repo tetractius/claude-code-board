@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, shell } from 'electron'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { scan } from '../core/scanner.ts'
@@ -10,8 +10,19 @@ import {
   buildBulkDeletePanel,
 } from '../core/commands.ts'
 import { openInTerminal, focusTty } from '../core/terminal.ts'
+import { stopSession } from '../core/stop.ts'
 import { resetClaudeBin } from '../core/claudeCli.ts'
-import type { BoardConfig, ScanResult } from '../core/types.ts'
+import {
+  attentionSummary,
+  newlyFinished,
+  settleFinished,
+  type PendingFinishes,
+  newlyNeedingAttention,
+  snapshot,
+  type StatusSnapshot,
+} from '../core/attention.ts'
+import { hooksInstalled, installHooks, uninstallHooks } from '../core/hooks.ts'
+import { NEEDS_ATTENTION, type BoardConfig, type BoardSession, type ScanResult } from '../core/types.ts'
 import { CHANNELS } from './ipc.ts'
 import { watchClaudeState } from './watcher.ts'
 
@@ -35,10 +46,20 @@ let stopWatching: (() => void) | null = null
 /** Guards against overlapping scans when watch events arrive in a burst. */
 let scanning = false
 let rescanQueued = false
+/** Statuses at the last pushed scan, to notify on transitions only. */
+let lastStatuses: StatusSnapshot | null = null
+/** Finished sessions held until they have stayed idle; see `settleFinished`. */
+const pendingFinishes: PendingFinishes = new Map()
+/** Held until dismissed: a garbage-collected Notification drops its click handler. */
+const shown = new Set<Notification>()
 
 async function runScan(): Promise<ScanResult> {
   const config = await loadConfig()
-  return scan({ claudeBin: config.claudeBin, finishedLimit: config.finishedLimit })
+  return scan({
+    claudeBin: config.claudeBin,
+    finishedLimit: config.finishedLimit,
+    contextWindow: config.contextWindow,
+  })
 }
 
 async function pushScan(): Promise<void> {
@@ -50,6 +71,7 @@ async function pushScan(): Promise<void> {
   try {
     const result = await runScan()
     win?.webContents.send(CHANNELS.sessionsPushed, result)
+    await notifyAttention(result)
   } catch (err) {
     console.error('[board] scan failed:', err)
   } finally {
@@ -57,6 +79,67 @@ async function pushScan(): Promise<void> {
     if (rescanQueued) {
       rescanQueued = false
       void pushScan()
+    }
+  }
+}
+
+function showBoard(): void {
+  if (!win) createWindow()
+  else {
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+  }
+}
+
+/**
+ * Clicking goes where the session is: its terminal when it has one, the board
+ * otherwise - or when the terminal can no longer be found.
+ */
+function notify(s: BoardSession, body: string): void {
+  // Name and what happened, nothing else: the path and the prompt are on the
+  // card, one click away.
+  const n = new Notification({ title: s.title, body })
+  shown.add(n)
+  n.on('close', () => shown.delete(n))
+  n.on('click', () => {
+    shown.delete(n)
+    if (s.where.type === 'tty' && process.platform === 'darwin') {
+      focusTty(s.where.label).catch(showBoard)
+    } else {
+      showBoard()
+    }
+  })
+  n.show()
+}
+
+async function notifyAttention(result: ScanResult): Promise<void> {
+  // A failed scan returns no sessions; diffing against it would announce every
+  // waiting session again once the next scan succeeds.
+  if (result.sessions.length === 0 && result.error) return
+
+  // The Dock badge counts what is waiting on you right now, whatever the
+  // notification settings - it is the glance that replaces opening the board.
+  // It only shows on macOS, and on Linux under a Unity launcher: on GNOME and
+  // KDE `setBadgeCount` does nothing and returns false. Nothing depends on it,
+  // so there is no guard - the notifications still work there.
+  app.setBadgeCount(result.sessions.filter((s) => NEEDS_ATTENTION.has(s.status)).length)
+
+  const needing = newlyNeedingAttention(lastStatuses, result.sessions)
+  const finished = settleFinished(
+    pendingFinishes,
+    newlyFinished(lastStatuses, result.sessions),
+    result.sessions,
+    Date.now(),
+  )
+  lastStatuses = snapshot(result.sessions)
+  if (!Notification.isSupported()) return
+
+  const config = await loadConfig()
+  if (config.notify) for (const s of needing) notify(s, attentionSummary(s))
+  if (config.notifyDone) {
+    for (const s of finished) {
+      notify(s, 'Finished')
     }
   }
 }
@@ -88,6 +171,21 @@ function registerIpc(): void {
   ipcMain.handle(CHANNELS.bulkDeletePanel, (_e, sessions) => buildBulkDeletePanel(sessions))
   ipcMain.handle(CHANNELS.openTerminal, (_e, command: string) => openInTerminal(command))
   ipcMain.handle(CHANNELS.focusTty, (_e, tty: string) => focusTty(tty))
+  ipcMain.handle(CHANNELS.hooksStatus, () => hooksInstalled())
+  ipcMain.handle(CHANNELS.hooksInstall, async () => {
+    await installHooks()
+    void pushScan()
+  })
+  ipcMain.handle(CHANNELS.hooksUninstall, async () => {
+    await uninstallHooks()
+    void pushScan()
+  })
+  ipcMain.handle(CHANNELS.stopSession, async (_e, pid: number, tty: string | null) => {
+    if (!Number.isInteger(pid) || pid <= 1) throw new Error(`not a pid: ${pid}`)
+    const stopped = await stopSession(pid, tty)
+    void pushScan()
+    return stopped
+  })
   ipcMain.handle(CHANNELS.openExternal, (_e, url: string) => {
     // Only ever hand http(s) links to the OS.
     if (!/^https?:\/\//i.test(url)) throw new Error('refusing to open a non-http url')

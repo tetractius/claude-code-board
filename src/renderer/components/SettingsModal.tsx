@@ -30,6 +30,84 @@ const input =
   'w-full rounded border border-suture bg-slab px-2 py-1.5 font-mono text-[12px] text-bone ' +
   'placeholder:text-ash/60 focus:border-mortis focus:outline-none'
 
+/**
+ * Installing edits the user's own `~/.claude/settings.json`, so it is a button
+ * with the consequences spelled out, never something the board does by itself.
+ */
+function HooksSection() {
+  const [installed, setInstalled] = useState<boolean | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    void api.hooksInstalled().then(setInstalled, () => setInstalled(false))
+  }, [])
+
+  const run = async (action: () => Promise<void>) => {
+    setError('')
+    try {
+      await action()
+      setInstalled(await api.hooksInstalled())
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  return (
+    <div className="rounded border border-suture px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] text-bone">Status hooks</span>
+        {installed !== null && (
+          <button
+            onClick={() => void run(installed ? api.uninstallHooks : api.installHooks)}
+            className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
+                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10"
+          >
+            {installed ? 'Remove' : 'Install'}
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-[11px] text-ash">
+        Adds a hook to ~/.claude/settings.json that records each session's busy / waiting / idle
+        state in ~/.claude-board/hooks. More reliable than reading Claude's internal files, which
+        change between versions. Stores no prompt text. Running sessions pick it up from their
+        next message; a backup is kept as settings.json.board-backup.
+      </p>
+      <p className="mt-1 text-[11px] text-ash">
+        That file is global, so the hook runs for every Claude Code session on this machine - in
+        any project, with or without the board open - not only the ones shown here.
+      </p>
+      {error && <p className="mt-1 text-[11px] text-artery">{error}</p>}
+    </div>
+  )
+}
+
+function Toggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string
+  hint: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2">
+      <input
+        type="checkbox"
+        className="mt-0.5 accent-verdigris"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span>
+        <span className="text-[12px] text-bone">{label}</span>
+        <span className="mt-0.5 block text-[11px] text-ash">{hint}</span>
+      </span>
+    </label>
+  )
+}
+
 export default function SettingsModal({ config, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<BoardConfig>(config)
 
@@ -86,6 +164,45 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
               />
             </Field>
           </div>
+
+          <Toggle
+            label="Notify when a session needs you"
+            hint="When a session starts waiting or becomes blocked. Click it to jump to the session's terminal."
+            checked={draft.notify}
+            onChange={(notify) => setDraft({ ...draft, notify })}
+          />
+          <Toggle
+            label="Notify when a session finishes"
+            hint="When a busy session ends its turn and goes idle."
+            checked={draft.notifyDone}
+            onChange={(notifyDone) => setDraft({ ...draft, notifyDone })}
+          />
+
+          <HooksSection />
+
+          <Field
+            label="Context window (tokens)"
+            hint="For the ctx % on each card. A session past it is measured against 1M."
+          >
+            <input
+              className={input}
+              type="number"
+              min={1000}
+              step={1000}
+              value={draft.contextWindow}
+              onChange={(e) => setDraft({ ...draft, contextWindow: Number(e.target.value) })}
+            />
+          </Field>
+
+          <Field label="Dormant after (hours)" hint="An open session idle this long counts as dormant.">
+            <input
+              className={input}
+              type="number"
+              min={1}
+              value={draft.dormantHours}
+              onChange={(e) => setDraft({ ...draft, dormantHours: Number(e.target.value) })}
+            />
+          </Field>
 
           {api.platform === 'linux' ? (
             <>

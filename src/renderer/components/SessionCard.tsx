@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import StatusBadge from './StatusBadge.tsx'
+import StopButton from './StopButton.tsx'
 import NotesPanel from './NotesPanel.tsx'
 import { api } from '../lib/api.ts'
 import {
@@ -26,11 +27,31 @@ interface Props {
   onDelete: (s: BoardSession) => void
   onSelect: (key: string) => void
   onFocusTty: (s: BoardSession) => void
+  onStop: (key: string, pid: number, tty: string | null) => Promise<void>
 }
 
 /** Whether this session can be jumped to - macOS, and running in a terminal. */
 export function canFocusTty(s: BoardSession): boolean {
   return s.where.type === 'tty' && api.platform === 'darwin'
+}
+
+const NOT_RESUMABLE =
+  'Nothing saved to resume: Claude kept no conversation for this session. ' +
+  'Either it never got a prompt, or it ran with transcript saving off.'
+
+/** Resume and the split button's caret: the same control, so the same look. */
+const RESUME_CLASS =
+  'cursor-pointer border border-suture bg-slab py-1 text-[11px] text-bone ' +
+  'hover:border-verdigris/60 hover:bg-verdigris/10 disabled:cursor-not-allowed ' +
+  'disabled:text-ash/50 disabled:hover:border-suture disabled:hover:bg-slab'
+
+/**
+ * Filled red from 80%: time to /compact. Red and filled, so it cannot be
+ * mistaken for the outlined amber "restart to update" chip beside it.
+ */
+function contextStyle(percent: number): string {
+  if (percent >= 80) return 'border-artery bg-artery/40 text-bone'
+  return 'border-suture bg-slab text-ash'
 }
 
 function Chip({ children, title }: { children: React.ReactNode; title?: string }) {
@@ -56,9 +77,11 @@ function SessionCard({
   onDelete,
   onSelect,
   onFocusTty,
+  onStop,
 }: Props) {
   const dead = TERMINAL_STATUS.has(s.status)
   const canFocus = canFocusTty(s)
+  const stoppablePid = s.live && s.kind === 'interactive' ? s.pid : undefined
   const annotated = noteText.trim().length > 0
   const style = statusStyle(s.status)
 
@@ -181,6 +204,23 @@ function SessionCard({
           </Chip>
         )}
         {s.pid && <Chip title="Process id">pid {s.pid}</Chip>}
+        {/*
+          Stopped with Ctrl+Z. It still holds its tty, so it looks open, but it
+          does nothing until resumed - and is usually hidden behind whatever
+          was started in that tab afterwards.
+        */}
+        {s.suspended && (
+          <span
+            title={
+              `Suspended (Ctrl+Z) on ${s.where.label}. Run \`fg\` in that terminal to resume ` +
+              `it, or \`kill -CONT ${s.pid}; kill ${s.pid}\` to end it.`
+            }
+            className="rounded border border-bile/50 bg-bile/10 px-1.5 py-0.5 font-mono
+                       text-[10px] text-bile"
+          >
+            ⏸ suspended
+          </span>
+        )}
         {s.needsRestart && (
           <span
             title={`Running ${s.version}, but a newer Claude is installed. This session keeps the old build until you restart it.`}
@@ -191,6 +231,19 @@ function SessionCard({
           </span>
         )}
         {s.tokens !== undefined && <Chip title="Tokens used">{formatTokens(s.tokens)} tok</Chip>}
+        {s.contextPercent !== undefined && !dead && (
+          <span
+            title={
+              `${formatTokens(s.contextTokens ?? 0)} tokens in context as of the last reply. ` +
+              'Past ~80%, /compact or a fresh session keeps it sharp.'
+            }
+            className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${contextStyle(
+              s.contextPercent,
+            )}`}
+          >
+            ctx {s.contextPercent}%
+          </span>
+        )}
       </div>
 
       {focusError && <p className="text-[11px] text-artery">{focusError}</p>}
@@ -238,13 +291,55 @@ function SessionCard({
           {shortId(s.sessionId)}… ⧉
         </button>
         <div className="flex shrink-0 gap-2">
-          <button
-            onClick={() => onResume(s)}
-            className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                       text-bone hover:border-verdigris/60 hover:bg-verdigris/10"
-          >
-            Resume
-          </button>
+          {/*
+            A running session already has a terminal: going to it is the useful
+            action, and resuming would start a second Claude on the same
+            conversation. So Open is the primary half of a split button.
+
+            The caret keeps the resume command one click away. focusTty only
+            drives iTerm and Terminal.app, so in Ghostty, kitty, WezTerm,
+            Alacritty or tmux Open cannot find the window, and the command is
+            the only way back into the session from the board.
+          */}
+          {s.live && canFocus ? (
+            <div className="flex">
+              <button
+                onClick={() => onFocusTty(s)}
+                title={`Bring the ${s.where.label} window to the front`}
+                className="relative cursor-pointer rounded-l border border-suture bg-slab px-2.5
+                           py-1 text-[11px] text-bone hover:z-10 hover:border-verdigris/60
+                           hover:bg-verdigris/10"
+              >
+                Open
+              </button>
+              <button
+                onClick={() => onResume(s)}
+                disabled={!s.resumable}
+                aria-label="Resume command"
+                title={s.resumable ? 'Resume command, to copy or open in a new terminal' : NOT_RESUMABLE}
+                className={`${RESUME_CLASS} relative -ml-px rounded-r px-1.5 hover:z-10`}
+              >
+                ▾
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => onResume(s)}
+              disabled={!s.resumable}
+              title={s.resumable ? undefined : NOT_RESUMABLE}
+              className={`${RESUME_CLASS} rounded px-2.5`}
+            >
+              Resume
+            </button>
+          )}
+          {stoppablePid && (
+            <StopButton
+              suspended={s.suspended}
+              onStop={() =>
+                onStop(s.key, stoppablePid, s.where.type === 'tty' ? s.where.label : null)
+              }
+            />
+          )}
           <button
             onClick={() => onDelete(s)}
             className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
@@ -281,10 +376,15 @@ export default memo(SessionCard, (a, b) => {
     x.needs === y.needs &&
     x.tokens === y.tokens &&
     x.pid === y.pid &&
+    x.live === y.live &&
+    x.kind === y.kind &&
     x.where.label === y.where.label &&
     x.isFork === y.isFork &&
     x.children === y.children &&
     x.needsRestart === y.needsRestart &&
+    x.suspended === y.suspended &&
+    x.resumable === y.resumable &&
+    x.contextPercent === y.contextPercent &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&
     x.command === y.command
