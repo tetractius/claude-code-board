@@ -3,7 +3,19 @@
 // nothing touches the real ~/.claude.
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -61,6 +73,26 @@ assert.equal(JSON.parse(readFileSync(settingsFile, 'utf8')).hooks.Stop.length, 2
 await uninstallHooks()
 assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')), original)
 assert.equal(await hooksInstalled(), false)
+
+// Writes are a rename, not a copy, so they go through the real path: a
+// settings.json symlinked from a dotfiles repo stays a symlink, keeps its mode,
+// and no temp file is left behind.
+const dotfiles = join(home, 'dotfiles')
+mkdirSync(dotfiles)
+const realSettings = join(dotfiles, 'claude-settings.json')
+rmSync(settingsFile)
+writeFileSync(realSettings, JSON.stringify(original))
+chmodSync(realSettings, 0o600)
+symlinkSync(realSettings, settingsFile)
+await installHooks()
+assert.equal(lstatSync(settingsFile).isSymbolicLink(), true)
+assert.equal(JSON.parse(readFileSync(realSettings, 'utf8')).hooks.Stop.length, 2)
+assert.equal(statSync(realSettings).mode & 0o777, 0o600)
+await uninstallHooks()
+assert.equal(lstatSync(settingsFile).isSymbolicLink(), true)
+assert.deepEqual(JSON.parse(readFileSync(realSettings, 'utf8')), original)
+assert.deepEqual(readdirSync(dotfiles), ['claude-settings.json'])
+assert.ok(!readdirSync(join(home, '.claude')).some((f) => f.endsWith('.board-tmp')))
 
 // Unparseable settings are refused, not overwritten.
 writeFileSync(settingsFile, '{ not json')

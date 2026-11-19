@@ -1,4 +1,4 @@
-import { chmod, copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BOARD_DIR, CLAUDE_DIR, HOOKS_DIR } from './paths.ts'
 import { readJson } from './util.ts'
@@ -113,14 +113,34 @@ async function readSettings(): Promise<Settings> {
   }
 }
 
+/**
+ * Replaces settings.json atomically. Claude Code silently ignores a settings
+ * file that does not parse, so a half-written one - a crash or a full disk
+ * mid-copy - would drop the user's whole config without a word. `rename` within
+ * one filesystem is all-or-nothing, which a copy is not; `core/notes.ts` does
+ * the same for the same reason.
+ *
+ * Writing goes through the real path, so a settings.json symlinked in from a
+ * dotfiles repo stays a symlink rather than being replaced by a plain file, and
+ * the file keeps its permissions.
+ */
 async function writeSettings(settings: Settings): Promise<void> {
   await mkdir(CLAUDE_DIR, { recursive: true })
+  const target = await realpath(SETTINGS_FILE).catch(() => SETTINGS_FILE)
+  const mode = await stat(target).then(
+    (s) => s.mode & 0o777,
+    () => 0o644,
+  )
   // One backup per change, next to the original, for a manual rollback.
-  await copyFile(SETTINGS_FILE, `${SETTINGS_FILE}.board-backup`).catch(() => {})
-  const tmp = `${SETTINGS_FILE}.board-tmp`
-  await writeFile(tmp, JSON.stringify(settings, null, 2) + '\n', 'utf8')
-  await copyFile(tmp, SETTINGS_FILE)
-  await rm(tmp, { force: true })
+  await copyFile(target, `${SETTINGS_FILE}.board-backup`).catch(() => {})
+  const tmp = `${target}.board-tmp`
+  try {
+    await writeFile(tmp, JSON.stringify(settings, null, 2) + '\n', { encoding: 'utf8', mode })
+    await rename(tmp, target)
+  } catch (err) {
+    await rm(tmp, { force: true })
+    throw err
+  }
 }
 
 export async function hooksInstalled(): Promise<boolean> {

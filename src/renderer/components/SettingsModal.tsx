@@ -72,6 +72,10 @@ function HooksSection() {
         change between versions. Stores no prompt text. Running sessions pick it up from their
         next message; a backup is kept as settings.json.board-backup.
       </p>
+      <p className="mt-1 text-[11px] text-ash">
+        That file is global, so the hook runs for every Claude Code session on this machine - in
+        any project, with or without the board open - not only the ones shown here.
+      </p>
       {error && <p className="mt-1 text-[11px] text-artery">{error}</p>}
     </div>
   )
