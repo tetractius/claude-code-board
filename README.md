@@ -292,6 +292,43 @@ installing. Two features are macOS-only and degrade rather than fail:
 "Open in Terminal" does work, through the configurable `terminalExec`
 (default `x-terminal-emulator`).
 
+## Remote hosts (SSH)
+
+The board always starts on this machine. Add hosts under **Settings → Remote
+hosts**, and the menu next to `sort:` in the title bar switches the whole board
+to one of them. Each host has its own colour, in the menu and as a line across
+the top of the window; this machine has none.
+
+Only a **host name** is stored, exactly as typed after `ssh`. User, port, key
+file and jump hosts come from `~/.ssh/config`. The board connects with
+`BatchMode=yes`, so it never asks for a password. Set up key login once per
+host:
+
+```bash
+ssh-keygen -t ed25519   # only if you have no key yet
+ssh-copy-id devbox      # copies your public key there, and accepts its host key
+ssh devbox true         # must work without a password prompt
+```
+
+The host needs **Node.js 18 or newer**. The board does not reimplement its
+scanner as shell commands. It uploads the same scanner, bundled into one file,
+to `~/.claude-board/remote/` on the host. The file is uploaded again only when
+the board changes. While the host is selected, the scanner runs over a single
+SSH connection and answers a scan every poll interval. Switching away hangs up
+and stops it.
+
+| On a remote card | Does |
+| --- | --- |
+| `↗ pts/3` | Brings the local iTerm or Terminal tab that is ssh'd into that session to the front. The exact match uses the SSH connection's client port, on Linux hosts. Otherwise it uses the only local tab connected to that host. If neither works, it does nothing. |
+| Open | A new iTerm window running `ssh -t devbox 'cd … && claude --resume …'`. |
+| Resume / `▾` | The same command, to copy or to open. |
+| Stop | Works: the identity check and the signal both run on the host. |
+| Delete, selecting for bulk delete | Greyed out: not supported on a remote server. |
+
+Notes are kept on this machine, keyed by session id, as for local sessions.
+Notifications fire for the host being shown, with its name in the title. Status
+hooks install on this machine only.
+
 ## Keyboard
 
 | Key | Does |
