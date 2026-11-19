@@ -41,12 +41,22 @@ export default function NotesPanel({
   /** Where to put the caret once React has re-rendered the new draft. */
   const pendingCaret = useRef<number | null>(null)
 
-  // Re-seed only when the card is reused for a different session.
+  // Re-seed when the card is reused for a different session.
   useEffect(() => {
     setDraft(initialText)
     dirty.current = false
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
+
+  /*
+   * And when the note arrives after the card does - at launch, the first scan
+   * can land before the notes have loaded. Without this the box stays empty
+   * over a note that exists, and typing into it saves over that note. Once
+   * the user has typed here, their draft wins.
+   */
+  useEffect(() => {
+    if (!dirty.current) setDraft(initialText)
+  }, [initialText])
 
   useLayoutEffect(() => {
     const el = area.current

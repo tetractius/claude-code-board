@@ -9,6 +9,8 @@ A dark-only desktop board for every Claude Code session on the machine — live,
 background, and finished-but-not-yet-collected — with per-session notes and
 copy-ready resume/delete commands.
 
+![The board: sessions waiting, busy and idle, one suspended, one due a restart, and finished ones below](docs/board.png)
+
 ## Claude Code versions
 
 The board reads Claude's own on-disk state, and Claude changes it. What each
