@@ -16,7 +16,8 @@ board release expects:
 
 | Board | Claude Code | Status reporting |
 | --- | --- | --- |
-| **0.1.5** | **2.1.285** (built and tested against) | as 0.1.4, but survives `claude agents --json` breaking |
+| **0.2.0** | **2.1.328** (built and tested against) | full `idle` / `busy` / `waiting` again — 2.1.328 writes `~/.claude/sessions/<pid>.json` once more; remote hosts over SSH |
+| 0.1.5 | 2.1.285 | as 0.1.4, but survives `claude agents --json` breaking |
 | 0.1.4 | 2.1.285 | **empty board if `claude agents --json` ever fails** — one bad exit code and every session disappears |
 | 0.1.3 | 2.1.285 | finds sessions that have no transcript yet |
 | 0.1.2 | 2.1.284 | misses a session started as a bare `claude` until its transcript is written |
@@ -29,6 +30,12 @@ those versions; 0.1.1 finds the sessions again but can only report whether one
 is running, not what it is doing — nothing publishes idle/busy/waiting any more.
 The exact release that dropped the registry is somewhere in 2.1.274–2.1.283,
 untested here.
+
+Claude 2.1.328 writes `~/.claude/sessions/<pid>.json` again, with `status`
+and `version`, so the board reports idle / busy / waiting once more. It reads
+that file whenever it exists, so no change was needed. Which release brought
+the file back, somewhere in 2.1.286–2.1.328, is untested here. The optional
+status hooks (Settings) give the same on versions that do not write it.
 
 Up to 0.1.4 a failure of `claude agents --json --all` aborted the whole scan and
 returned nothing, so a single change to that command emptied the board even
