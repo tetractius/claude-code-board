@@ -115,6 +115,9 @@ async function notifyAttention(result: ScanResult): Promise<void> {
 
   // The Dock badge counts what is waiting on you right now, whatever the
   // notification settings - it is the glance that replaces opening the board.
+  // It only shows on macOS, and on Linux under a Unity launcher: on GNOME and
+  // KDE `setBadgeCount` does nothing and returns false. Nothing depends on it,
+  // so there is no guard - the notifications still work there.
   app.setBadgeCount(result.sessions.filter((s) => NEEDS_ATTENTION.has(s.status)).length)
 
   const needing = newlyNeedingAttention(lastStatuses, result.sessions)
