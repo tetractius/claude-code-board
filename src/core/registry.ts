@@ -5,10 +5,13 @@ import { promisify } from 'node:util'
 
 const execFile = promisify(execFileCb)
 import { PROJECTS_DIR, REGISTRY_DIR } from './paths.ts'
-import { isClaudeProcess, resumedSessionId, type ProcInfo } from './ps.ts'
+import { continuesLatest, isClaudeProcess, resumedSessionId, type ProcInfo } from './ps.ts'
 import { readJson } from './util.ts'
 
 const UUID_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/** `ps` gives start times to the second; a file is never older than its writer by more. */
+const START_SLACK_MS = 2_000
 
 /** A `~/.claude/sessions/<pid>.json` record. */
 export interface RegistryEntry {
@@ -129,12 +132,32 @@ export async function discoverLiveSessions(
     }
   }
 
+  /**
+   * Every session this project has on disk, by when it was last written to:
+   * its transcript, its session directory, whichever is newer. Taking either
+   * kind on its own picks wrong - a session that has not used a subagent yet
+   * has no directory, and the newest directory is then some older session's,
+   * which the card would show, title and context and all, for as long as the
+   * live one ran.
+   */
+  const inProject = async (slug: string) => {
+    const latest = new Map<string, number>()
+    const seen = (id: string, mtimeMs: number) =>
+      latest.set(id, Math.max(latest.get(id) ?? 0, mtimeMs))
+    for (const t of byMtime) if (basename(dirname(t.path)) === slug) seen(t.sessionId, t.mtimeMs)
+    for (const d of await sessionDirs(slug)) seen(d.sessionId, d.mtimeMs)
+    return [...latest]
+      .map(([sessionId, mtimeMs]) => ({ sessionId, mtimeMs }))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)
+  }
+
   const claimed = new Set<string>()
   const out: { pid: number; cwd: string; sessionId: string }[] = []
   for (const pid of pids) {
     const cwd = await cwdOf(pid)
     if (!cwd) continue
     const slug = slugifyCwd(cwd)
+    const proc = procs.get(pid)
 
     /*
      * Exact first, guesswork last. `--resume <uuid>` is authoritative and is
@@ -142,12 +165,18 @@ export async function discoverLiveSessions(
      * session must both resolve to it, and the caller collapses them into one
      * card.
      */
-    let sessionId = resumedSessionId(procs.get(pid))
+    let sessionId = resumedSessionId(proc)
 
-    sessionId ??= (await sessionDirs(slug)).find((d) => !claimed.has(d.sessionId))?.sessionId
-
-    sessionId ??= byMtime.find(
-      (t) => !claimed.has(t.sessionId) && basename(dirname(t.path)) === slug,
+    /*
+     * Otherwise the project's most recent session - but only one written to
+     * since this process started. Anything older belongs to an earlier run,
+     * and a session that has not written yet is better shown unnamed than as
+     * that one. `--continue` is the exception: it picks up exactly that
+     * session, which was last written before it started.
+     */
+    const since = continuesLatest(proc) || !proc?.startedAt ? 0 : proc.startedAt - START_SLACK_MS
+    sessionId ??= (await inProject(slug)).find(
+      (c) => !claimed.has(c.sessionId) && c.mtimeMs >= since,
     )?.sessionId
 
     // Still unknown: show the session anyway. A card with no id is far more

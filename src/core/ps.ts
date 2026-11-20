@@ -14,6 +14,19 @@ export interface ProcInfo {
   args: string
   /** `ps` state flags, e.g. `S+`; a leading `T` means stopped by a signal. */
   stat: string
+  /** When it started, in ms since the epoch - to the second, from `ps`'s elapsed time. */
+  startedAt?: number
+}
+
+/**
+ * `ps`'s `etime`, `[[dd-]hh:]mm:ss`, in seconds. POSIX, so the same on macOS
+ * and Linux - unlike `etimes` or `lstart`, which is also in the local language.
+ */
+export function parseElapsed(etime: string): number | undefined {
+  const m = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(etime)
+  if (!m) return undefined
+  const [d, h, min, s] = m.slice(1).map((v) => Number(v ?? 0))
+  return ((d * 24 + h) * 60 + min) * 60 + s
 }
 
 /**
@@ -24,7 +37,7 @@ export async function buildProcIndex(): Promise<Map<number, ProcInfo>> {
   const index = new Map<number, ProcInfo>()
   let stdout: string
   try {
-    ;({ stdout } = await run('ps', ['-Ao', 'pid=,ppid=,tty=,stat=,args='], {
+    ;({ stdout } = await run('ps', ['-Ao', 'pid=,ppid=,tty=,stat=,etime=,args='], {
       timeout: 15_000,
       maxBuffer: 8 * 1024 * 1024,
     }))
@@ -32,11 +45,13 @@ export async function buildProcIndex(): Promise<Map<number, ProcInfo>> {
     return index
   }
 
+  const now = Date.now()
   for (const line of stdout.split('\n')) {
-    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line)
+    const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line)
     if (!m) continue
     const pid = Number(m[1])
-    const args = m[5].trim()
+    const args = m[6].trim()
+    const elapsed = parseElapsed(m[5])
     // `comm` is just the argv[0] of `args`; one ps call cannot emit both.
     index.set(pid, {
       pid,
@@ -45,6 +60,7 @@ export async function buildProcIndex(): Promise<Map<number, ProcInfo>> {
       stat: m[4],
       comm: args.split(' ')[0],
       args,
+      startedAt: elapsed === undefined ? undefined : now - elapsed * 1000,
     })
   }
   return index
@@ -109,4 +125,12 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/
 export function resumedSessionId(info: ProcInfo | undefined): string | undefined {
   if (!info || !/(^|\s)(--resume|-r)(\s|=)/.test(info.args)) return undefined
   return UUID.exec(info.args)?.[0]
+}
+
+/**
+ * Launched with `--continue`: it carries on the project's most recent session,
+ * which is on disk from before it started.
+ */
+export function continuesLatest(info: ProcInfo | undefined): boolean {
+  return !!info && /(^|\s)(--continue|-c)(\s|$)/.test(info.args)
 }

@@ -17,7 +17,9 @@ import {
 } from '../src/core/attention.ts'
 import {
   buildProcIndex,
+  continuesLatest,
   isForeground,
+  parseElapsed,
   isSuspended,
   terminalOf,
   type ProcInfo,
@@ -101,6 +103,20 @@ assert.equal(isSuspended(undefined), false)
 assert.equal(isForeground(proc('S+')), true)
 assert.equal(isForeground(proc('T')), false)
 assert.equal(isForeground(undefined), false)
+
+// `ps` elapsed time, which a live session's start comes from: POSIX
+// `[[dd-]hh:]mm:ss` on macOS and Linux alike.
+assert.equal(parseElapsed('05:06'), 306)
+assert.equal(parseElapsed('01:02:03'), 3723)
+assert.equal(parseElapsed('2-03:04:05'), 2 * 86_400 + 3 * 3600 + 4 * 60 + 5)
+assert.equal(parseElapsed('-'), undefined)
+assert.equal(typeof (await buildProcIndex()).get(process.pid)?.startedAt, 'number')
+// `--continue` takes up the project's last session, from before it started.
+const launched = (args: string) => ({ args }) as ProcInfo
+assert.equal(continuesLatest(launched('claude --continue')), true)
+assert.equal(continuesLatest(launched('/usr/local/bin/claude -c')), true)
+assert.equal(continuesLatest(launched('claude --resume 1234')), false)
+assert.equal(continuesLatest(launched('claude --model opus-c')), false)
 
 // stopSession's identity guard uses terminalOf, so it must agree with ttyOf
 // on both spellings of "no terminal" - otherwise a headless Linux session
