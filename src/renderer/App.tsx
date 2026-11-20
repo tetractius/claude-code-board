@@ -149,14 +149,12 @@ export default function App() {
   const onSelect = useCallback((key: string) => setSelectedKey(key), [])
 
   const onToggleChecked = useCallback((key: string) => {
-    // Ticking is for bulk delete, which a remote host does not support.
-    if (host) return
     setCheckedKeys((prev) => {
       const next = new Set(prev)
       if (!next.delete(key)) next.add(key)
       return next
     })
-  }, [host])
+  }, [])
 
   const onClearChecked = useCallback(() => setCheckedKeys(new Set()), [])
 
@@ -405,9 +403,8 @@ export default function App() {
   }, [visible, selectedKey, move, onFocusTty, onToggleChecked, command, settingsOpen])
 
   const onSelectAllShown = useCallback(() => {
-    if (host) return
     setCheckedKeys(new Set(visible.map((s) => s.key)))
-  }, [visible, host])
+  }, [visible])
 
   const onDeleteChecked = useCallback(() => {
     const chosen = scan.sessions.filter((s) => checkedKeys.has(s.key))

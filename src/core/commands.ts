@@ -34,10 +34,22 @@ export function buildRemoteResumeCommand(s: BoardSession, host: string, claudeBi
  * backtick, backslash or quote would be interpreted, so anything unusual falls
  * back to a fully single-quoted literal.
  */
-function homePath(absolute: string): string {
-  const rest = absolute.startsWith(HOME + '/') ? absolute.slice(HOME.length + 1) : null
+function homePath(absolute: string, home: string): string {
+  const rest = home && absolute.startsWith(home + '/') ? absolute.slice(home.length + 1) : null
   if (rest && /^[\w.\-/ ]+$/.test(rest)) return `"$HOME/${rest}"`
   return shellQuote(absolute)
+}
+
+/**
+ * The home directory a session's paths hang off. A remote session's paths are
+ * the remote's, and its home is not this machine's: everything the board
+ * deletes is under `<home>/.claude`, so it is whatever comes before that.
+ * Where that cannot be told, '' leaves the path whole.
+ */
+function homeOf(s: BoardSession): string {
+  if (!s.host) return HOME
+  const at = s.transcriptPath?.indexOf('/.claude/projects/') ?? -1
+  return at > 0 ? s.transcriptPath!.slice(0, at) : ''
 }
 
 /**
@@ -56,7 +68,7 @@ function declarations(s: BoardSession): string[] {
   if (s.transcriptPath) {
     // The project directory gets its own line: the full path is ~110
     // characters and would wrap, which is what makes a command hard to read.
-    lines.push(`PROJECT=${homePath(dirname(s.transcriptPath))}`)
+    lines.push(`PROJECT=${homePath(dirname(s.transcriptPath), homeOf(s))}`)
     lines.push(`TRANSCRIPT="$PROJECT/${basename(s.transcriptPath)}"`)
   }
   return lines
@@ -130,8 +142,10 @@ export function buildUnguardedDelete(s: BoardSession): string {
   if (drop.length === 0) return '# Nothing on disk to remove for this session.'
 
   const lines = [...declarations(s), '']
+  // No trailing comment to say why: zsh, the macOS default, does not read `#`
+  // as one at an interactive prompt, so it would become arguments to kill.
   if (s.live && s.pid) {
-    lines.push(`kill ${s.pid}   # the session is still running`)
+    lines.push(`kill ${s.pid}`)
     lines.push('')
   }
   // The :? guards abort rather than deleting the wrong thing if a variable
@@ -152,11 +166,63 @@ export interface DeletePanel {
   blocks: DeleteBlock[]
 }
 
+/** Ends the script `onHost` hands to the remote shell. */
+const REMOTE_END = 'ON_REMOTE'
+
+/**
+ * A script wrapped to run on `host`: pasted into a terminal on this machine,
+ * ssh logs in there and the remote `sh` reads the script from stdin. The
+ * delimiter is quoted, so nothing in the script is expanded here - `$HOME`
+ * is the remote's.
+ *
+ * The wrapper says nothing about itself in a `#` comment: zsh, the macOS
+ * default, does not read one as a comment at an interactive prompt.
+ */
+export function onHost(host: string, script: string): string {
+  // Interpolated unquoted, so it must be a bare host name and nothing more.
+  if (!isValidHost(host)) throw new Error(`Not a host name: ${host}`)
+  if (script.split('\n').includes(REMOTE_END)) throw new Error(`Script contains ${REMOTE_END}`)
+  return [`ssh -T ${host} sh -s <<'${REMOTE_END}'`, script, REMOTE_END].join('\n')
+}
+
+/**
+ * A remote session's panel: the same blocks, each wrapped to run on its host,
+ * and a line at the top saying so - the one way this goes wrong is running it
+ * in the wrong place.
+ */
+function remotePanel(panel: DeletePanel, host: string): DeletePanel {
+  return {
+    warnings: [
+      `These run on ${host}, not on this machine. Each one is an ssh command: paste it ` +
+        `into a terminal here, and it logs in to ${host} and runs there. In a shell that ` +
+        `is already on ${host}, copy only the lines between \`ssh …\` and \`${REMOTE_END}\`.`,
+      ...panel.warnings,
+    ],
+    blocks: panel.blocks.map((b) => ({
+      ...b,
+      title: `${b.title} · on ${host}`,
+      command: b.command.startsWith('#') ? b.command : onHost(host, b.command),
+    })),
+  }
+}
+
+/** The one host every session is on: '' for this machine. Mixed is refused. */
+function hostOf(sessions: BoardSession[]): string {
+  const hosts = new Set(sessions.map((s) => s.host ?? ''))
+  if (hosts.size > 1) throw new Error('Cannot delete sessions from different machines at once.')
+  return [...hosts][0] ?? ''
+}
+
 /**
  * The delete panel: two independent options, each copied on its own. Nothing
  * here is ever executed by the board.
  */
 export function buildDeletePanel(s: BoardSession): DeletePanel {
+  const panel = localDeletePanel(s)
+  return s.host ? remotePanel(panel, s.host) : panel
+}
+
+function localDeletePanel(s: BoardSession): DeletePanel {
   const warnings: string[] = []
 
   if (s.needs) {
@@ -275,8 +341,14 @@ export function buildBulkUnguardedDelete(sessions: BoardSession[]): string {
   ].join('\n')
 }
 
-/** The delete panel for a multi-session selection. */
+/** The delete panel for a multi-session selection, all on one machine. */
 export function buildBulkDeletePanel(sessions: BoardSession[]): DeletePanel {
+  const host = hostOf(sessions)
+  const panel = localBulkDeletePanel(sessions)
+  return host ? remotePanel(panel, host) : panel
+}
+
+function localBulkDeletePanel(sessions: BoardSession[]): DeletePanel {
   const warnings: string[] = []
 
   const live = sessions.filter((s) => s.live)

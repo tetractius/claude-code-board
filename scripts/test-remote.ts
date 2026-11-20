@@ -13,6 +13,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -33,7 +34,11 @@ import {
   sshDestination,
   sshTarget,
 } from '../src/core/sshTerminal.ts'
-import { buildRemoteResumeCommand } from '../src/core/commands.ts'
+import {
+  buildBulkDeletePanel,
+  buildDeletePanel,
+  buildRemoteResumeCommand,
+} from '../src/core/commands.ts'
 import { splitHost } from '../src/core/hostname.ts'
 import type { ProcInfo } from '../src/core/ps.ts'
 import type { BoardSession } from '../src/core/types.ts'
@@ -159,6 +164,105 @@ try {
   assert.equal(out, `${odd}|--resume 1234-abcd`)
 } finally {
   rmSync(work, { recursive: true, force: true })
+}
+
+// --- Delete on a remote host. The panel's commands are ssh commands, run
+// from a terminal here; what they remove is on the host, under its $HOME -
+// never the same-named files on this machine.
+const del = mkdtempSync(join(tmpdir(), 'board-remote-delete-'))
+const holder = (() => {
+  // A live "claude" over there, holding a session: the guard must see it.
+  symlinkSync('/bin/sleep', join(del, 'claude'))
+  return spawn(join(del, 'claude'), ['30'], { stdio: 'ignore' })
+})()
+try {
+  const bin = join(del, 'bin')
+  mkdirSync(bin)
+  // `ssh -T devbox sh -s` becomes `sh -s` here, as the remote user.
+  writeFileSync(
+    join(bin, 'ssh'),
+    `#!/bin/sh
+printf '%s\\n' "$*" >> "$LOG"
+while [ $# -gt 0 ]; do case "$1" in -*) shift ;; *) break ;; esac; done
+shift
+HOME="$REMOTE_HOME" exec /bin/sh -c "$*"
+`,
+  )
+  chmodSync(join(bin, 'ssh'), 0o755)
+  const local = join(del, 'local')
+  const far = join(del, 'far home')
+  const sid = (n: number) => `d000000${n}-0000-4000-8000-000000000000`
+  const project = (h: string) => join(h, '.claude/projects/-srv-app')
+  const lay = (h: string, n: number) => {
+    mkdirSync(join(project(h), sid(n)), { recursive: true })
+    writeFileSync(join(project(h), `${sid(n)}.jsonl`), '{}\n')
+  }
+  const there = (h: string, n: number) =>
+    [existsSync(join(project(h), `${sid(n)}.jsonl`)), existsSync(join(project(h), sid(n)))]
+  const remoteCard = (n: number, over: Partial<BoardSession> = {}) =>
+    ({
+      host: 'devbox',
+      key: `devbox/${sid(n)}`,
+      sessionId: sid(n),
+      title: `session ${n}`,
+      live: false,
+      transcriptPath: join(project(far), `${sid(n)}.jsonl`),
+      where: { type: 'none', label: '—' },
+      ...over,
+    }) as BoardSession
+  const log = join(del, 'ssh.log')
+  const run = (cmd: string) =>
+    execFileSync('/bin/sh', ['-c', cmd], {
+      env: { PATH: `${bin}:/usr/bin:/bin`, HOME: local, REMOTE_HOME: far, LOG: log },
+      encoding: 'utf8',
+    })
+  for (const h of [local, far]) for (const n of [1, 2, 3]) lay(h, n)
+
+  const panel = buildDeletePanel(remoteCard(1))
+  // Says where it runs, before anything else.
+  assert.match(panel.warnings[0], /run on devbox, not on this machine/)
+  const guarded = panel.blocks[0].command
+  assert.match(panel.blocks[0].title, /^Guarded · on devbox$/)
+  assert.match(guarded, /^ssh -T devbox sh -s <<'ON_REMOTE'\n/)
+  assert.match(guarded, /\nON_REMOTE$/)
+  // The remote's paths, rebased on its own $HOME rather than spelled out.
+  assert.match(guarded, /\nPROJECT="\$HOME\/\.claude\/projects\/-srv-app"\n/)
+  assert.doesNotMatch(guarded, /far home/)
+
+  assert.equal(run(guarded).trim(), `deleted session ${sid(1).slice(0, 8)}`)
+  assert.deepEqual(there(far, 1), [false, false], 'gone over there')
+  assert.deepEqual(there(local, 1), [true, true], 'untouched here')
+  assert.match(readFileSync(log, 'utf8'), /^-T devbox sh -s$/m)
+
+  // A session a live claude still holds is refused, over there as here.
+  const busy = buildDeletePanel(remoteCard(2, { live: true, pid: holder.pid }))
+  assert.match(run(busy.blocks[0].command), /refusing: .* still in use by pid\(s\): \d+/)
+  assert.deepEqual(there(far, 2), [true, true])
+  // Unguarded stops it first. Pasted into zsh a `#` is not a comment, so
+  // there is none to say why, here or in the wrapper.
+  assert.match(busy.blocks[1].command, new RegExp(`\\nkill ${holder.pid}\\n`))
+  // (sed's `s#…##` is a delimiter, not a comment: only a word starting `#` is.)
+  for (const b of [...panel.blocks, ...busy.blocks]) assert.doesNotMatch(b.command, /(^|\s)#/m, b.title)
+
+  // Bulk: the guard skips the held one and deletes the rest, on the host.
+  const bulk = buildBulkDeletePanel([remoteCard(2, { live: true, pid: holder.pid }), remoteCard(3)])
+  assert.match(bulk.blocks[0].title, /· on devbox$/)
+  const out = run(bulk.blocks[0].command)
+  assert.match(out, new RegExp(`skipped  ${sid(2)}`))
+  assert.match(out, new RegExp(`deleted  ${sid(3)}`))
+  assert.deepEqual(there(far, 2), [true, true])
+  assert.equal(there(far, 3)[0], false)
+  assert.equal(there(local, 3)[0], true)
+
+  // One machine per script, and a host that is a host.
+  const here = { ...remoteCard(1), host: undefined, key: sid(1) } as BoardSession
+  assert.throws(() => buildBulkDeletePanel([here, remoteCard(3)]), /different machines/)
+  assert.throws(() => buildDeletePanel(remoteCard(1, { host: 'devbox; rm -rf ~' })), /Not a host name/)
+  // A local session's panel is a plain script, run here.
+  assert.doesNotMatch(buildDeletePanel(here).blocks[0].command, /ssh|ON_REMOTE/)
+} finally {
+  holder.kill()
+  rmSync(del, { recursive: true, force: true })
 }
 
 // --- A whole connection: bootstrap, upload, scan, stop, reconnect.

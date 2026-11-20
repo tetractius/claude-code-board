@@ -41,9 +41,6 @@ export function canFocusTty(s: BoardSession): boolean {
   return s.where.type === 'tty' && api.platform === 'darwin'
 }
 
-/** What a control says on a remote card when it cannot work there. */
-const NOT_REMOTE = 'Not supported on a remote server.'
-
 const NOT_RESUMABLE =
   'Nothing saved to resume: Claude kept no conversation for this session. ' +
   'Either it never got a prompt, or it ran with transcript saving off.'
@@ -121,11 +118,8 @@ function SessionCard({
           checked={checked}
           onChange={() => onToggleChecked(s.key)}
           onClick={(e) => e.stopPropagation()}
-          // Selecting is only ever for bulk delete, which cannot reach a remote host.
-          disabled={remote}
-          title={remote ? NOT_REMOTE : 'Select for bulk delete'}
-          className="size-3 shrink-0 cursor-pointer accent-artery disabled:cursor-not-allowed
-                     disabled:opacity-40"
+          title="Select for bulk delete"
+          className="size-3 shrink-0 cursor-pointer accent-artery"
         />
         <StatusBadge
           status={s.status}
@@ -372,12 +366,9 @@ function SessionCard({
           )}
           <button
             onClick={() => onDelete(s)}
-            disabled={remote}
-            title={remote ? NOT_REMOTE : undefined}
+            title={remote ? `A script to delete it, run on ${s.host} over ssh` : undefined}
             className="cursor-pointer rounded border border-suture bg-slab px-2.5 py-1 text-[11px]
-                       text-ash hover:border-clot hover:bg-clot/15 hover:text-artery
-                       disabled:cursor-not-allowed disabled:text-ash/40 disabled:hover:border-suture
-                       disabled:hover:bg-slab"
+                       text-ash hover:border-clot hover:bg-clot/15 hover:text-artery"
           >
             Delete
           </button>
