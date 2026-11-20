@@ -418,8 +418,8 @@ export default function SettingsModal({ config, onSave, onClose }: Props) {
           />
 
           <Field
-            label="Context window (tokens)"
-            hint="For the ctx % on each card. A session past it is measured against 1M."
+            label="Context window for other models (tokens)"
+            hint="Claude's own models are measured against their real window: 1M for current ones, 200k for older. This is for any other model name, e.g. from a gateway."
           >
             <input
               className={input}

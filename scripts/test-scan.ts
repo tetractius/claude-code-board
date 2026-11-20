@@ -6,7 +6,15 @@
 // piece alone.
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -14,6 +22,7 @@ import { join } from 'node:path'
 const home = mkdtempSync(join(tmpdir(), 'board-scan-'))
 process.env.HOME = home
 const { scan } = await import('../src/core/scanner.ts')
+const { slugifyCwd } = await import('../src/core/registry.ts')
 
 const bin = join(home, 'bin')
 mkdirSync(bin)
@@ -48,7 +57,7 @@ function standIn(): number {
 const sid = (n: number) => `0000000${n}-0000-4000-8000-000000000000`
 const project = join(home, '.claude/projects/-tmp-demo')
 mkdirSync(project, { recursive: true })
-const transcript = (id: string, contextTokens: number) =>
+const transcript = (id: string, contextTokens: number, model = 'claude-opus-5-5') =>
   writeFileSync(
     join(project, `${id}.jsonl`),
     [
@@ -57,7 +66,7 @@ const transcript = (id: string, contextTokens: number) =>
         type: 'assistant',
         timestamp: new Date().toISOString(),
         message: {
-          model: 'claude-opus-5-5',
+          model,
           usage: { input_tokens: 10, cache_read_input_tokens: contextTokens - 10 },
         },
       },
@@ -80,6 +89,7 @@ try {
   transcript(sid(1), 100_000)
   hook(sid(1), 'UserPromptSubmit')
   transcript(sid(5), 30_000) // finished: a transcript with no process
+  transcript(sid(6), 100_000, 'gateway-model') // finished, on a model the board cannot place
   hook(sid(4), 'UserPromptSubmit')
 
   const entry = (pid: number, n: number, extra: object = {}) => ({
@@ -116,7 +126,9 @@ try {
   assert.equal(card(1).suspended, false)
   assert.equal(card(1).resumable, true)
   assert.equal(card(1).contextTokens, 100_000)
-  assert.equal(card(1).contextPercent, 50)
+  // Opus 5.5 has a 1M window, whatever the setting says.
+  assert.equal(card(1).contextWindow, 1_000_000)
+  assert.equal(card(1).contextPercent, 10)
 
   // No hook record: Claude's own status stands. No transcript: nothing to
   // resume, and no context to measure.
@@ -138,11 +150,73 @@ try {
   assert.equal(card(5).live, false)
   assert.equal(card(5).suspended, false)
   assert.equal(card(5).resumable, true)
-  assert.equal(card(5).contextPercent, 15)
+  assert.equal(card(5).contextPercent, 3)
 
-  // The context window is configurable.
+  // A model the board cannot place is measured against the configured window.
+  assert.equal(card(6).contextPercent, 50)
   const wider = await scan({ claudeBin: claude, finishedLimit: 0, contextWindow: 400_000 })
-  assert.equal(wider.sessions.find((x) => x.sessionId === sid(1))?.contextPercent, 25)
+  assert.equal(wider.sessions.find((x) => x.sessionId === sid(6))?.contextPercent, 25)
+  assert.equal(wider.sessions.find((x) => x.sessionId === sid(1))?.contextPercent, 10)
+
+  /*
+   * Claude 2.1.28x to 2.1.327: `claude agents` lists no interactive session
+   * and nothing on disk names the one a pid is running - only a `.key` file
+   * says it is there. Each project here has a session from yesterday that
+   * filled its window and used subagents, so it has a session directory.
+   * A live card must never take that session's title and its 99%.
+   */
+  writeFileSync(join(home, 'agents.json'), '[]')
+  const loop = join(home, 'loop.sh')
+  writeFileSync(loop, 'while :; do sleep 1; done\n')
+  const yesterday = (Date.now() - 86_400_000) / 1000
+  const uid = (c: string) => `${c.repeat(8)}-0000-4000-8000-000000000000`
+  const projectOf = (cwd: string) => join(home, '.claude/projects', slugifyCwd(cwd))
+  const written = (cwd: string, id: string, tokens: number, at?: number) => {
+    mkdirSync(projectOf(cwd), { recursive: true })
+    const path = join(projectOf(cwd), `${id}.jsonl`)
+    const reply = { model: 'claude-opus-5-5', usage: { input_tokens: 10, cache_read_input_tokens: tokens - 10 } }
+    writeFileSync(path, `${JSON.stringify({ type: 'assistant', message: reply })}\n`)
+    if (at) utimesSync(path, at, at)
+  }
+  const filledYesterday = (cwd: string, id: string) => {
+    written(cwd, id, 198_000, yesterday)
+    mkdirSync(join(projectOf(cwd), id, 'subagents'), { recursive: true })
+    utimesSync(join(projectOf(cwd), id), yesterday, yesterday)
+  }
+  /** A claude in `cwd`, run as a script file: `sh -c` would read as `-c`, --continue. */
+  const liveIn = (name: string, ...args: string[]) => {
+    mkdirSync(join(home, name))
+    // lsof reports the real path: /private/var/..., not /var/...
+    const cwd = realpathSync(join(home, name))
+    const child = spawn('/bin/sh', [loop, ...args], { argv0: claude, cwd, detached: true, stdio: 'ignore' })
+    children.push(child)
+    mkdirSync(join(home, '.claude/sessions'), { recursive: true })
+    writeFileSync(join(home, '.claude/sessions', `${child.pid}.0123abcd.key`), '')
+    return { cwd, pid: child.pid! }
+  }
+
+  // Today's session has written, but not used a subagent yet.
+  const busy = liveIn('busy')
+  filledYesterday(busy.cwd, uid('a'))
+  written(busy.cwd, uid('b'), 24_000)
+  // Today's session has written nothing at all yet.
+  const fresh2 = liveIn('fresh')
+  filledYesterday(fresh2.cwd, uid('c'))
+  // `--continue` carries on exactly yesterday's session.
+  const resumed = liveIn('continued', '--continue')
+  filledYesterday(resumed.cwd, uid('d'))
+  await new Promise((r) => setTimeout(r, 300))
+
+  const old = await scan({ claudeBin: claude, finishedLimit: 0 })
+  const onPid = (pid: number) => old.sessions.find((s) => s.pid === pid && s.live)
+  assert.equal(onPid(busy.pid)?.sessionId, uid('b'), 'the session written since it started')
+  assert.equal(onPid(busy.pid)?.contextTokens, 24_000)
+  assert.equal(onPid(fresh2.pid)?.sessionId, '', 'unnamed, not yesterday')
+  assert.equal(onPid(fresh2.pid)?.contextPercent, undefined)
+  assert.equal(onPid(resumed.pid)?.sessionId, uid('d'))
+  for (const id of [uid('a'), uid('c')]) {
+    assert.equal(old.sessions.find((s) => s.sessionId === id)?.live, false, `${id} is yesterday's`)
+  }
 } finally {
   for (const c of children) c.kill('SIGKILL')
   rmSync(home, { recursive: true, force: true })

@@ -36,6 +36,8 @@ export interface TranscriptMeta {
   command?: string
   /** Prompt-side tokens of the last main-thread reply: what the context holds. */
   contextTokens?: number
+  /** The model that wrote that reply, which says how big its window is. */
+  contextModel?: string
 }
 
 const TAIL_BYTES = 512 * 1024
@@ -144,7 +146,7 @@ function lastMessageAt(blob: string): number | undefined {
  * cache reads together are everything the model was sent for that reply.
  * Subagent turns and `<synthetic>` placeholders carry no real usage.
  */
-function lastContextTokens(blob: string): number | undefined {
+function lastContext(blob: string): { tokens: number; model?: string } | undefined {
   const marker = '"type":"assistant"'
   let at = blob.lastIndexOf(marker)
   while (at >= 0) {
@@ -159,7 +161,7 @@ function lastContextTokens(blob: string): number | undefined {
           (u.input_tokens ?? 0) +
           (u.cache_creation_input_tokens ?? 0) +
           (u.cache_read_input_tokens ?? 0)
-        if (total > 0) return total
+        if (total > 0) return { tokens: total, model: rec.message?.model }
       }
     } catch {
       // A truncated first line in the tail window; keep walking backwards.
@@ -244,7 +246,9 @@ export async function readTranscriptMeta(
   meta.aiTitle = lastRecord(tail, 'ai-title', 'aiTitle')
   meta.lastPrompt = lastRecord(tail, 'last-prompt', 'lastPrompt')
   meta.lastMessageAt = lastMessageAt(tail)
-  meta.contextTokens = lastContextTokens(tail)
+  const context = lastContext(tail)
+  meta.contextTokens = context?.tokens
+  meta.contextModel = context?.model
 
   // Both title records are rewritten as a session runs, so the tail almost
   // always holds them - measured here, the last custom-title sits within 40KB
