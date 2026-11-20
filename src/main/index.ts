@@ -201,10 +201,6 @@ function resumeCommandFor(s: BoardSession): string {
     : buildResumeCommand(s)
 }
 
-function refuseRemote(sessions: BoardSession[]): void {
-  if (sessions.some((s) => s.host)) throw new Error('Deleting is not supported on a remote server.')
-}
-
 async function startPolling(): Promise<void> {
   const { pollIntervalMs } = await loadConfig()
   if (pollTimer) clearInterval(pollTimer)
@@ -246,14 +242,11 @@ function registerIpc(): void {
     return openInTerminal(resumeCommandFor(session))
   })
   ipcMain.handle(CHANNELS.resumeCommand, (_e, session: BoardSession) => resumeCommandFor(session))
-  ipcMain.handle(CHANNELS.deletePanel, (_e, session: BoardSession) => {
-    refuseRemote([session])
-    return buildDeletePanel(session)
-  })
-  ipcMain.handle(CHANNELS.bulkDeletePanel, (_e, sessions: BoardSession[]) => {
-    refuseRemote(sessions)
-    return buildBulkDeletePanel(sessions)
-  })
+  // A remote session's panel is wrapped to run on its host over ssh.
+  ipcMain.handle(CHANNELS.deletePanel, (_e, session: BoardSession) => buildDeletePanel(session))
+  ipcMain.handle(CHANNELS.bulkDeletePanel, (_e, sessions: BoardSession[]) =>
+    buildBulkDeletePanel(sessions),
+  )
   ipcMain.handle(CHANNELS.openTerminal, (_e, command: string) => openInTerminal(command))
   ipcMain.handle(CHANNELS.focusTty, (_e, tty: string) => focusTty(tty))
   ipcMain.handle(CHANNELS.hooksStatus, () => hooksInstalled())

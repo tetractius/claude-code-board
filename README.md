@@ -357,7 +357,7 @@ says which one applies.
 | Open | A new iTerm window running `ssh -t devbox 'cd … && claude --resume …'`. |
 | Resume / `▾` | The same command, to copy or to open. |
 | Stop | Works: the identity check and the signal both run on the host. |
-| Delete, selecting for bulk delete | Greyed out: not supported on a remote server. |
+| Delete, selecting for bulk delete | The same scripts as for a local session, each wrapped in `ssh -T devbox sh -s <<'ON_REMOTE'` so it runs on the host. See [Deleting](#deleting). |
 
 Notes are kept on this machine, keyed by session id, as for local sessions.
 Notifications fire for the host being shown, with its name in the title. Status
@@ -453,6 +453,24 @@ the worktree and applies Claude's git guards.
 
 A job that is *blocked* waiting on you has nothing running, so the guard will
 not stop you deleting it. The panel warns and quotes what it is waiting for.
+
+**On a remote host** the panel says, before anything else, that these run on
+that host and not on this machine. Each block is one ssh command to paste into a
+terminal here:
+
+```bash
+ssh -T devbox sh -s <<'ON_REMOTE'
+SESSION='…'
+PROJECT="$HOME/.claude/projects/-srv-app"
+…
+ON_REMOTE
+```
+
+The quoted delimiter stops this machine's shell from expanding anything, so
+`$HOME`, the pid check and the `rm` are all the host's. Paths are written from
+the host's `$HOME`, so running it as the same user as the board's connection
+removes the same files. If you are already in a shell on the host, copy only the
+lines between the `ssh` line and `ON_REMOTE`.
 
 ## Layout
 

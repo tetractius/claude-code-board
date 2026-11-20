@@ -193,6 +193,7 @@ export default function Toolbar(p: Props) {
           </button>
           <span className="ml-auto text-[11px] text-ash">
             nothing is deleted until you copy and run the script
+            {p.host ? `, which runs on ${p.host}` : ''}
           </span>
         </div>
       ) : null}
@@ -215,11 +216,8 @@ export default function Toolbar(p: Props) {
           ))}
           <button
             onClick={p.onSelectAllShown}
-            // Ticking is only for bulk delete, which cannot reach a remote host.
-            disabled={!!p.host}
-            className="ml-auto cursor-pointer text-[11px] text-ash hover:text-bone
-                       disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-ash"
-            title={p.host ? 'Not supported on a remote server.' : 'Tick every card currently shown'}
+            className="ml-auto cursor-pointer text-[11px] text-ash hover:text-bone"
+            title="Tick every card currently shown"
           >
             select {p.shown} of {p.total}
           </button>
