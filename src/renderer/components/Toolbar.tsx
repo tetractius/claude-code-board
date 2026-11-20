@@ -53,7 +53,10 @@ export default function Toolbar(p: Props) {
   const color = hostColor(p.host, p.hosts)
   return (
     <header
-      className="drag-region shrink-0 border-b border-suture bg-crypt/80 backdrop-blur"
+      // `relative z-30`: the blur makes the header its own stacking context, so
+      // without a z-index the cards below - positioned, and later in the page -
+      // paint over anything that drops out of it, the host menu included.
+      className="drag-region relative z-30 shrink-0 border-b border-suture bg-crypt/80 backdrop-blur"
       // A remote board is ruled in its host's colour, so it is never mistaken
       // for this machine's.
       style={color ? { boxShadow: `inset 0 2px 0 ${color}` } : undefined}

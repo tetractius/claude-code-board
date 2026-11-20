@@ -61,8 +61,8 @@ export default function HostMenu({ host, hosts, onHost, onManage }: Props) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-1 min-w-44 overflow-hidden rounded border
-                     border-suture bg-crypt py-1 shadow-2xl"
+          className="absolute right-0 z-40 mt-1 max-h-[70vh] min-w-44 overflow-y-auto rounded
+                     border border-suture bg-crypt py-1 shadow-2xl"
         >
           {['', ...hosts].map((h) => {
             const c = hostColor(h, hosts)
