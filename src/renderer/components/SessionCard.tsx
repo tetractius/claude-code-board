@@ -253,7 +253,8 @@ function SessionCard({
         {s.contextPercent !== undefined && !dead && (
           <span
             title={
-              `${formatTokens(s.contextTokens ?? 0)} tokens in context as of the last reply. ` +
+              `${formatTokens(s.contextTokens ?? 0)} of ${formatTokens(s.contextWindow ?? 0)} ` +
+              'tokens in context as of the last reply. ' +
               'Past ~80%, /compact or a fresh session keeps it sharp.'
             }
             className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${contextStyle(
@@ -419,6 +420,8 @@ export default memo(SessionCard, (a, b) => {
     x.suspended === y.suspended &&
     x.resumable === y.resumable &&
     x.contextPercent === y.contextPercent &&
+    x.contextTokens === y.contextTokens &&
+    x.contextWindow === y.contextWindow &&
     x.host === y.host &&
     x.jobState === y.jobState &&
     x.headless === y.headless &&

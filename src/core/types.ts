@@ -96,8 +96,10 @@ export interface BoardSession {
    * last assistant message's usage, cache reads and writes included.
    */
   contextTokens?: number
-  /** `contextTokens` as a share of the configured window, 0-100. */
+  /** `contextTokens` as a share of `contextWindow`, 0-100. */
   contextPercent?: number
+  /** The window it is measured against, from the model that wrote the last reply. */
+  contextWindow?: number
   startedAt: number
   lastActivity: number
   lastActivitySource: ActivitySource
@@ -170,8 +172,9 @@ export interface BoardConfig {
   /** Desktop notification when a busy session finishes its turn. */
   notifyDone: boolean
   /**
-   * Context window to measure usage against, in tokens. A session already past
-   * it is assumed to be on a 1M-token window.
+   * Context window for a model the board does not recognise, in tokens. Claude's
+   * own models are measured against their real window (see `contextWindowOf`),
+   * and a session already past this one is assumed to be on a 1M-token window.
    */
   contextWindow: number
   /** A live session idle for longer than this many hours counts as dormant. */

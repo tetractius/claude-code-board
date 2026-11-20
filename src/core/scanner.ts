@@ -230,7 +230,7 @@ async function buildSession(
     live,
     suspended: live && isSuspended(proc),
     resumable: !!transcriptPath,
-    ...contextUsage(meta?.contextTokens, ctx.contextWindow),
+    ...contextUsage(meta?.contextTokens, contextWindowOf(meta?.contextModel, ctx.contextWindow)),
     startedAt: entry.startedAt ?? 0,
     lastActivity: Math.max(activity.at, hook?.at ?? 0),
     lastActivitySource: activity.source,
@@ -287,7 +287,7 @@ async function recoverFinished(
       live: false,
       suspended: false,
       resumable: true,
-      ...contextUsage(meta.contextTokens, contextWindow),
+      ...contextUsage(meta.contextTokens, contextWindowOf(meta.contextModel, contextWindow)),
       startedAt: 0,
       lastActivity: activity.at,
       lastActivitySource: activity.source,
@@ -300,16 +300,41 @@ async function recoverFinished(
 }
 
 /**
- * A session already past the configured window cannot be on it, so it must be
- * on the 1M-token one rather than at 140%.
+ * The context window a model runs with, from the id its replies carry - which
+ * may come with a platform's prefix or suffix (`anthropic.`, `@20251101`).
+ *
+ * Every current model has 1M tokens: Opus and Sonnet from 4.6, Haiku from 5,
+ * and Fable and Mythos. Older ones have 200K. Measuring a 1M session against
+ * 200K showed it at 80-99% from 160K tokens up, then at 20% once it passed
+ * 200K. A model the board cannot place - a gateway's own name, say - gets the
+ * configured window.
+ */
+export function contextWindowOf(model: string | undefined, fallback: number): number {
+  const m = /claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2})(?!\d))?/.exec(model ?? '')
+  // `claude-3-5-sonnet-...` and the like: the generations before 4.
+  if (!m) return /claude-\d/.test(model ?? '') ? 200_000 : fallback
+  const [family, major, minor] = [m[1], Number(m[2]), Number(m[3] ?? 0)]
+  const atLeast = (x: number, y: number) => major > x || (major === x && minor >= y)
+  if (family === 'fable' || family === 'mythos') return 1_000_000
+  if (family === 'haiku') return atLeast(5, 0) ? 1_000_000 : 200_000
+  return atLeast(4, 6) ? 1_000_000 : 200_000
+}
+
+/**
+ * A session already past the window cannot be on it - an older model on its
+ * 1M beta, say - so it must be on the 1M-token one rather than at 140%.
  */
 export function contextUsage(
   tokens: number | undefined,
   window: number,
-): Pick<BoardSession, 'contextTokens' | 'contextPercent'> {
+): Pick<BoardSession, 'contextTokens' | 'contextPercent' | 'contextWindow'> {
   if (!tokens || window <= 0) return {}
   const size = tokens > window ? Math.max(window, 1_000_000) : window
-  return { contextTokens: tokens, contextPercent: Math.min(100, Math.round((tokens / size) * 100)) }
+  return {
+    contextTokens: tokens,
+    contextPercent: Math.min(100, Math.round((tokens / size) * 100)),
+    contextWindow: size,
+  }
 }
 
 /**

@@ -57,7 +57,7 @@ function standIn(): number {
 const sid = (n: number) => `0000000${n}-0000-4000-8000-000000000000`
 const project = join(home, '.claude/projects/-tmp-demo')
 mkdirSync(project, { recursive: true })
-const transcript = (id: string, contextTokens: number) =>
+const transcript = (id: string, contextTokens: number, model = 'claude-opus-5-5') =>
   writeFileSync(
     join(project, `${id}.jsonl`),
     [
@@ -66,7 +66,7 @@ const transcript = (id: string, contextTokens: number) =>
         type: 'assistant',
         timestamp: new Date().toISOString(),
         message: {
-          model: 'claude-opus-5-5',
+          model,
           usage: { input_tokens: 10, cache_read_input_tokens: contextTokens - 10 },
         },
       },
@@ -89,6 +89,7 @@ try {
   transcript(sid(1), 100_000)
   hook(sid(1), 'UserPromptSubmit')
   transcript(sid(5), 30_000) // finished: a transcript with no process
+  transcript(sid(6), 100_000, 'gateway-model') // finished, on a model the board cannot place
   hook(sid(4), 'UserPromptSubmit')
 
   const entry = (pid: number, n: number, extra: object = {}) => ({
@@ -125,7 +126,9 @@ try {
   assert.equal(card(1).suspended, false)
   assert.equal(card(1).resumable, true)
   assert.equal(card(1).contextTokens, 100_000)
-  assert.equal(card(1).contextPercent, 50)
+  // Opus 5.5 has a 1M window, whatever the setting says.
+  assert.equal(card(1).contextWindow, 1_000_000)
+  assert.equal(card(1).contextPercent, 10)
 
   // No hook record: Claude's own status stands. No transcript: nothing to
   // resume, and no context to measure.
@@ -147,11 +150,13 @@ try {
   assert.equal(card(5).live, false)
   assert.equal(card(5).suspended, false)
   assert.equal(card(5).resumable, true)
-  assert.equal(card(5).contextPercent, 15)
+  assert.equal(card(5).contextPercent, 3)
 
-  // The context window is configurable.
+  // A model the board cannot place is measured against the configured window.
+  assert.equal(card(6).contextPercent, 50)
   const wider = await scan({ claudeBin: claude, finishedLimit: 0, contextWindow: 400_000 })
-  assert.equal(wider.sessions.find((x) => x.sessionId === sid(1))?.contextPercent, 25)
+  assert.equal(wider.sessions.find((x) => x.sessionId === sid(6))?.contextPercent, 25)
+  assert.equal(wider.sessions.find((x) => x.sessionId === sid(1))?.contextPercent, 10)
 
   /*
    * Claude 2.1.28x to 2.1.327: `claude agents` lists no interactive session
@@ -205,7 +210,7 @@ try {
   const old = await scan({ claudeBin: claude, finishedLimit: 0 })
   const onPid = (pid: number) => old.sessions.find((s) => s.pid === pid && s.live)
   assert.equal(onPid(busy.pid)?.sessionId, uid('b'), 'the session written since it started')
-  assert.equal(onPid(busy.pid)?.contextPercent, 12)
+  assert.equal(onPid(busy.pid)?.contextTokens, 24_000)
   assert.equal(onPid(fresh2.pid)?.sessionId, '', 'unnamed, not yesterday')
   assert.equal(onPid(fresh2.pid)?.contextPercent, undefined)
   assert.equal(onPid(resumed.pid)?.sessionId, uid('d'))
