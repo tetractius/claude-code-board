@@ -18,7 +18,8 @@ board release expects:
 
 | Board | Claude Code | Status reporting |
 | --- | --- | --- |
-| **0.2.1** | **2.1.328** (built and tested against) | as 0.2.0, but a note no longer shows as empty when the board starts |
+| **0.2.2** | **2.1.329** (built and tested against) | as 0.2.1; ctx % measured against each model's own window; delete on remote hosts |
+| 0.2.1 | 2.1.328 | as 0.2.0, but a note no longer shows as empty when the board starts. **ctx % reads 80–99% for current (1M) models from 160k tokens up**, and on 2.1.28x–2.1.327 a live card can show an older session's title and ctx |
 | 0.2.0 | 2.1.328 | full `idle` / `busy` / `waiting` again — 2.1.328 writes `~/.claude/sessions/<pid>.json` once more; remote hosts over SSH. **A note can show as empty at launch, and typing into it overwrites it** |
 | 0.1.5 | 2.1.285 | as 0.1.4, but survives `claude agents --json` breaking |
 | 0.1.4 | 2.1.285 | **empty board if `claude agents --json` ever fails** — one bad exit code and every session disappears |
